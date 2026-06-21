@@ -1,6 +1,6 @@
 // Full protocol deposit -> withdraw round-trip through the Pinocchio program on
 // the fork: init_config, deposit USDC (CP-Swap add-liquidity CPI + mint receipt),
-// then withdraw (burn receipt + CP-Swap withdraw CPI + return USDC).
+// then withdraw (burn receipt + redeem Raydium LP + burn synth + return USDC).
 // Run via: harness/run-pinocchio-config.sh harness/tests/pinocchio-deposit.ts
 import * as anchor from "@coral-xyz/anchor";
 import {
@@ -343,6 +343,9 @@ describe("pinocchio deposit/withdraw round-trip (surfpool fork)", () => {
 
     // --- WITHDRAW (proportional across both legs) ---
     const userUsdcBefore = (await getAccount(conn, userUsdc)).amount;
+    const protoABefore = (await getAccount(conn, protoA)).amount;
+    const protoBBefore = (await getAccount(conn, protoB)).amount;
+    const protoUsdcBefore = (await getAccount(conn, protoUsdc)).amount;
     const totalLp = protoLpAuBal + protoLpBuBal;
     const burnA = (receiptBal * protoLpAuBal) / totalLp;
     const burnB = receiptBal - burnA;
@@ -397,10 +400,20 @@ describe("pinocchio deposit/withdraw round-trip (surfpool fork)", () => {
 
     const receiptAfter = (await getAccount(conn, userReceipt, undefined, TOKEN_2022_PROGRAM_ID)).amount;
     const userUsdcAfter = (await getAccount(conn, userUsdc)).amount;
+    const protoLpAuAfter = (await getAccount(conn, protoLpAU)).amount;
+    const protoLpBuAfter = (await getAccount(conn, protoLpBU)).amount;
+    const protoAAfter = (await getAccount(conn, protoA)).amount;
+    const protoBAfter = (await getAccount(conn, protoB)).amount;
+    const protoUsdcAfter = (await getAccount(conn, protoUsdc)).amount;
     console.log(
       `    >>> withdraw: receipt ${receiptBal}->${receiptAfter}, user USDC +${userUsdcAfter - userUsdcBefore}`,
     );
     assert.equal(receiptAfter, 0n, "receipt not fully burned");
     assert.ok(userUsdcAfter > userUsdcBefore, "user did not get USDC back");
+    assert.equal(protoLpAuAfter, 0n, "A/Q Raydium LP not redeemed");
+    assert.equal(protoLpBuAfter, 0n, "B/Q Raydium LP not redeemed");
+    assert.equal(protoAAfter, protoABefore, "A synth should be burned, not accumulated");
+    assert.equal(protoBAfter, protoBBefore, "B synth should be burned, not accumulated");
+    assert.equal(protoUsdcAfter, 0n, "protocol should not custody quote after withdraw");
   });
 });

@@ -5,8 +5,9 @@
 //! Instructions: 0=rebalance (oracle-free), 1=init_config, 2=deposit,
 //! 3=withdraw, 4=set_paused. State lives in the `["config"]` PDA (manual serde,
 //! `config.rs`). deposit/withdraw wrap the real CP-Swap deposit/withdraw CPIs
-//! (`cpswap_cpi.rs`); the receipt token is the LP claim. MVP deposit/withdraw act
-//! on the A/USDC pool (multi-pool fan-out is a later extension).
+//! (`cpswap_cpi.rs`); the receipt token is the LP claim. Deposit fans 50/50 across
+//! +/USDC and −/USDC; withdraw redeems Raydium LP, burns the +/- synth leg, and
+//! returns quote to the user (protocol_usdc is pass-through only).
 #![no_std]
 
 mod config;
@@ -31,7 +32,7 @@ use pinocchio_system::instructions::CreateAccount;
 // legacy so the transfer hook (invoked from within Token-2022) can mint them without
 // re-entering Token-2022. Only the receipt mint and MEME (both Token-2022, only ever
 // touched in top-level ixs) go through `token_cpi`. See token_cpi.rs.
-use pinocchio_token::instructions::{MintTo, Transfer};
+use pinocchio_token::instructions::{Burn, MintTo, Transfer};
 
 entrypoint!(process_instruction);
 
@@ -810,6 +811,12 @@ fn deposit(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
     )?;
     // 4. mint receipt (Token-2022, 1:1 with LP) to the user
     token_cpi::mint_to(receipt_mint, user_receipt, authority, lp_amount, &[Signer::from(&seeds)])?;
+    // 4.5 return any quote dust — protocol_usdc is a pass-through, not a vault.
+    let quote_left = token_amount(protocol_usdc)?;
+    if quote_left > 0 {
+        Transfer::new(protocol_usdc, user_usdc, authority, quote_left)
+            .invoke_signed(&[Signer::from(&seeds)])?;
+    }
     // 5. bookkeeping
     let new_total = {
         let data = cfg.try_borrow()?;
@@ -820,7 +827,7 @@ fn deposit(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
     Ok(())
 }
 
-/// Withdraw one anchor leg: burn receipt → CP-Swap withdraw LP → return USDC.
+/// Withdraw one anchor leg: burn receipt → redeem Raydium LP → burn synth → return USDC.
 /// Call twice (A then B) to fully redeem a fan-out deposit.
 ///
 /// accounts: 0 user(signer,w) 1 config(w) 2 authority 3 usdc_mint 4 mint_synth(w)
@@ -874,21 +881,27 @@ fn withdraw(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
 
     // 1. burn the user's receipt (Token-2022; user signs directly)
     token_cpi::burn(user_receipt, receipt_mint, user, receipt_amount, &[])?;
-    // 2. redeem the matching LP (receipt is 1:1 with LP)
+    // 2. redeem the matching Raydium LP (receipt is 1:1 with LP; CP-Swap burns LP tokens)
+    let synth_before = token_amount(protocol_synth)?;
     let usdc_before = token_amount(protocol_usdc)?;
     cpswap_cpi::withdraw(
         receipt_amount, 0, 0, authority, cp_authority, pool, protocol_lp, protocol_synth,
         protocol_usdc, vault_synth, vault_usdc, mint_synth, usdc_mint, lp_mint, token_program,
         token_program_2022, memo_program, &seeds,
     )?;
-    let usdc_after = token_amount(protocol_usdc)?;
-    let usdc_out = usdc_after.saturating_sub(usdc_before);
+    let synth_out = token_amount(protocol_synth)?.saturating_sub(synth_before);
+    let usdc_out = token_amount(protocol_usdc)?.saturating_sub(usdc_before);
 
-    // 3. send the redeemed USDC to the user (the A side stays protocol-owned)
+    // 3. burn the +/- synth leg pulled from the pool
+    if synth_out > 0 {
+        Burn::new(protocol_synth, mint_synth, authority, synth_out)
+            .invoke_signed(&[Signer::from(&seeds)])?;
+    }
+    // 4. send all redeemed quote to the user — protocol does not custody USDC
     if usdc_out > 0 {
         Transfer::new(protocol_usdc, user_usdc, authority, usdc_out).invoke_signed(&[Signer::from(&seeds)])?;
     }
-    // 4. bookkeeping
+    // 5. bookkeeping
     let new_total = {
         let data = cfg.try_borrow()?;
         Config::load(&data)?.total_receipt()?.saturating_sub(receipt_amount)
