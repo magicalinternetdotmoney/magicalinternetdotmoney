@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: #07070b; font-family: 'Space Grotesk', system-ui, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; overflow-x: hidden; }
+  ::selection { background: rgba(160,107,255,0.35); }
+  input { font-family: inherit; }
+  input::placeholder { color: #54546a; }
+  @keyframes mim-flow { to { stroke-dashoffset: -32; } }
+  @keyframes mim-flowrev { to { stroke-dashoffset: 32; } }
+  @keyframes mim-spin { to { transform: rotate(360deg); } }
+  @keyframes mim-floaty { 0%,100% { transform:translateY(0);} 50% { transform:translateY(-7px);} }
+  @keyframes mim-rise { from { opacity:0; transform:translateY(14px);} to { opacity:1; transform:translateY(0);} }
+  @keyframes mim-pop { from { opacity:0; transform:translateY(16px) scale(.985);} to { opacity:1; transform:none;} }
+  @keyframes mim-fadein { from { opacity:0;} to { opacity:1;} }
+  @keyframes mim-shimmer { to { background-position: 220% center; } }
+  @keyframes mim-grain { 0%{transform:translate(0,0)}20%{transform:translate(-4%,3%)}40%{transform:translate(3%,-5%)}60%{transform:translate(-2%,4%)}80%{transform:translate(4%,-2%)}100%{transform:translate(0,0)} }
+  @keyframes mim-dot { 0%,100% { opacity:.25;} 50% { opacity:1;} }
+</style>
+</helmet>
+
+<div style="position:relative; min-height:100vh; width:100%; background:radial-gradient(120% 80% at 50% -10%, #14122a 0%, #0a0a14 44%, #07070b 100%); overflow-x:hidden;">
+
+  <div style="position:fixed; inset:0; background-image:linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px); background-size:48px 48px; mask-image:radial-gradient(90% 60% at 50% 20%, #000 0%, transparent 85%); pointer-events:none;"></div>
+  <div style="position:fixed; top:-14%; left:8%; width:40vw; height:40vw; max-width:620px; max-height:620px; background:radial-gradient(circle, rgba(47,230,192,0.13), transparent 65%); filter:blur(20px); pointer-events:none; animation:mim-floaty 12s ease-in-out infinite;"></div>
+  <div style="position:fixed; bottom:-16%; right:6%; width:42vw; height:42vw; max-width:640px; max-height:640px; background:radial-gradient(circle, rgba(160,107,255,0.15), transparent 65%); filter:blur(20px); pointer-events:none; animation:mim-floaty 15s ease-in-out infinite reverse;"></div>
+  <div style="position:fixed; inset:0; opacity:0.32; mix-blend-mode:overlay; pointer-events:none; background-image:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22><filter id=%22n%22><feTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%222%22/></filter><rect width=%22120%22 height=%22120%22 filter=%22url(%23n)%22 opacity=%220.5%22/></svg>'); animation:mim-grain 6s steps(5) infinite;"></div>
+
+  <!-- NAV -->
+  <div style="position:relative; z-index:20; width:100%; display:flex; justify-content:center; padding:18px clamp(14px,3vw,32px) 0;">
+    <div style="width:100%; max-width:620px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <sc-if value="{{ showBack }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ goHome }}" style="width:32px; height:32px; border-radius:10px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.03); color:#cfcfe0; font-size:16px; cursor:pointer;">&larr;</button>
+        </sc-if>
+        <svg width="26" height="25" viewBox="0 0 96 92" fill="none"><path d="M48 8 L88 80 L8 80 Z" stroke="url(#navg)" stroke-width="4" stroke-linejoin="round"/><circle cx="48" cy="8" r="8" fill="#2fe6c0"/><circle cx="88" cy="80" r="8" fill="#a06bff"/><circle cx="8" cy="80" r="8" fill="#f2c14e"/><defs><linearGradient id="navg" x1="0" y1="0" x2="96" y2="92"><stop offset="0" stop-color="#2fe6c0"/><stop offset="1" stop-color="#a06bff"/></linearGradient></defs></svg>
+        <span style="font-weight:600; font-size:15px; letter-spacing:-0.01em; color:#f4f4fb;">Magical Internet Money</span>
+      </div>
+      <sc-if value="{{ connected }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ disconnect }}" style="display:flex; align-items:center; gap:7px; padding:8px 12px; border:1px solid rgba(255,255,255,0.1); border-radius:999px; background:rgba(255,255,255,0.03); font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#cfcfe0; cursor:pointer; white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:#2fe6c0;box-shadow:0 0 8px #2fe6c0;animation:mim-dot 1.8s ease-in-out infinite;"></span>{{ shortAddr }}</button>
+      </sc-if>
+    </div>
+  </div>
+
+  <!-- ============ CONNECT ============ -->
+  <sc-if value="{{ notConnected }}" hint-placeholder-val="{{ true }}">
+  <div style="position:relative; z-index:10; min-height:calc(100vh - 80px); display:flex; align-items:center; justify-content:center; padding:32px clamp(16px,4vw,40px) 60px;">
+    <div style="width:100%; max-width:460px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:26px;">
+      <div style="position:relative; width:140px; height:140px; display:flex; align-items:center; justify-content:center; animation:mim-rise .7s ease both;">
+        <svg width="140" height="140" viewBox="0 0 160 160" style="position:absolute; inset:0; animation:mim-spin 26s linear infinite;"><circle cx="80" cy="80" r="70" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1" stroke-dasharray="2 7"/></svg>
+        <svg width="96" height="92" viewBox="0 0 96 92" fill="none" style="filter:drop-shadow(0 0 16px rgba(160,107,255,0.45));">
+          <path d="M48 8 L88 80 L8 80 Z" stroke="url(#sg)" stroke-width="2.5" stroke-linejoin="round" fill="rgba(160,107,255,0.05)"/>
+          <circle cx="48" cy="8" r="6.5" fill="#2fe6c0"/><circle cx="88" cy="80" r="6.5" fill="#a06bff"/><circle cx="8" cy="80" r="6.5" fill="#f2c14e"/>
+          <defs><linearGradient id="sg" x1="0" y1="0" x2="96" y2="92"><stop offset="0" stop-color="#2fe6c0"/><stop offset="1" stop-color="#a06bff"/></linearGradient></defs>
+        </svg>
+      </div>
+      <div style="animation:mim-rise .7s ease .08s both;">
+        <h1 style="margin:0; font-size:clamp(36px,8vw,52px); line-height:1.0; font-weight:700; letter-spacing:-0.025em; color:#f4f4fb;">Magical Internet<br>Money</h1>
+        <p style="margin:18px auto 0; max-width:370px; font-size:16px; line-height:1.55; color:#9494ad;">launch a leveraged synthetic pair in one click, or provide the liquidity and <span style="color:#cfcfe0;">earn the arbitrage.</span> three pools, one receipt, all on Solana.</p>
+      </div>
+      <div style="width:100%; max-width:340px; display:flex; flex-direction:column; gap:12px; animation:mim-rise .7s ease .16s both;">
+        <button onClick="{{ openWallet }}" style="width:100%; padding:17px; border:none; border-radius:14px; font-family:'Space Grotesk'; font-size:16px; font-weight:600; color:#07070b; background:linear-gradient(100deg,#2fe6c0,#7ad9ff 35%,#a06bff); background-size:220% auto; box-shadow:0 12px 34px -10px rgba(122,150,255,0.6); cursor:pointer; transition:transform .15s; animation:mim-shimmer 4s linear infinite;" style-active="transform:scale(0.99)">Connect Wallet</button>
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#54546a; letter-spacing:0.03em;">unaudited · experimental · here be dragons</div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============ HOME ============ -->
+  <sc-if value="{{ viewHome }}" hint-placeholder-val="{{ false }}">
+  <div style="position:relative; z-index:10; width:100%; display:flex; justify-content:center; padding:18px clamp(14px,3vw,32px) 60px;">
+    <div style="width:100%; max-width:620px; display:flex; flex-direction:column; gap:16px;">
+
+      <div style="display:flex; gap:10px;">
+        <div style="flex:1; border-radius:16px; padding:13px 16px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07);"><div style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#7e7e97; letter-spacing:0.1em;">TOTAL TVL</div><div style="font-size:18px; font-weight:700; color:#f4f4fb; margin-top:4px; font-variant-numeric:tabular-nums;">{{ tvl }}</div></div>
+        <div style="flex:1; border-radius:16px; padding:13px 16px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07);"><div style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#7e7e97; letter-spacing:0.1em;">PAIRS LIVE</div><div style="font-size:18px; font-weight:700; color:#f4f4fb; margin-top:4px; font-variant-numeric:tabular-nums;">{{ pairCount }}</div></div>
+        <div style="flex:1; border-radius:16px; padding:13px 16px; background:rgba(47,230,192,0.06); border:1px solid rgba(47,230,192,0.18);"><div style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#7e7e97; letter-spacing:0.1em;">TOP APR</div><div style="font-size:18px; font-weight:700; color:#2fe6c0; margin-top:4px; font-variant-numeric:tabular-nums;">{{ topApr }}</div></div>
+      </div>
+
+      <!-- two big actions -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px,1fr)); gap:14px;">
+        <button onClick="{{ goCreate }}" style="text-align:left; cursor:pointer; border-radius:22px; padding:22px; background:linear-gradient(150deg, rgba(47,230,192,0.10), rgba(160,107,255,0.10)); border:1px solid rgba(255,255,255,0.1); display:flex; flex-direction:column; gap:12px;" style-active="transform:scale(0.99)">
+          <span style="width:46px; height:46px; border-radius:13px; background:rgba(47,230,192,0.15); display:flex; align-items:center; justify-content:center; font-size:22px;">✦</span>
+          <span style="font-size:19px; font-weight:700; color:#f4f4fb;">Launch a pair</span>
+          <span style="font-size:13px; line-height:1.45; color:#9494ad;">spin up the receipt mint + three AMMs, set your token metadata, seed it. ~30 seconds.</span>
+        </button>
+        <button onClick="{{ goProvideNew }}" style="text-align:left; cursor:pointer; border-radius:22px; padding:22px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.08); display:flex; flex-direction:column; gap:12px;" style-active="transform:scale(0.99)">
+          <span style="width:46px; height:46px; border-radius:13px; background:rgba(160,107,255,0.15); display:flex; align-items:center; justify-content:center; font-size:22px;">◆</span>
+          <span style="font-size:19px; font-weight:700; color:#f4f4fb;">Provide liquidity</span>
+          <span style="font-size:13px; line-height:1.45; color:#9494ad;">deposit USDC into a live pair, hold the receipt, earn the arbitrage. redeem anytime.</span>
+        </button>
+      </div>
+
+      <!-- live pairs -->
+      <div style="border-radius:20px; padding:16px 18px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06);">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:12px;">live pairs</div>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <sc-for list="{{ pairs }}" as="p" hint-placeholder-count="3">
+            <button onClick="{{ p.open }}" style="display:flex; align-items:center; gap:12px; padding:11px 10px; border:none; border-radius:12px; background:none; cursor:pointer; text-align:left;" style-active="background:rgba(255,255,255,0.04)">
+              <span style="flex:none; display:flex;"><span style="width:26px; height:26px; border-radius:50%; background:{{ p.ca }}; border:2px solid #0c0c16;"></span><span style="width:26px; height:26px; border-radius:50%; background:{{ p.cb }}; border:2px solid #0c0c16; margin-left:-9px;"></span></span>
+              <span style="flex:1; min-width:0;"><span style="display:block; font-size:14px; font-weight:600; color:#eaeaf2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ p.name }}</span><span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#7e7e97;">{{ p.sym }}</span></span>
+              <span style="flex:none; text-align:right;"><span style="display:block; font-family:'IBM Plex Mono',monospace; font-size:13px; color:#f4f4fb;">{{ p.tvl }}</span><span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#2fe6c0;">{{ p.apr }} APR</span></span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============ CREATE ============ -->
+  <sc-if value="{{ viewCreate }}" hint-placeholder-val="{{ false }}">
+  <div style="position:relative; z-index:10; width:100%; display:flex; justify-content:center; padding:18px clamp(14px,3vw,32px) 60px;">
+    <div style="width:100%; max-width:560px; display:flex; flex-direction:column; gap:16px;">
+
+      <!-- step header -->
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div style="font-size:22px; font-weight:700; color:#f4f4fb;">{{ createTitle }}</div>
+        <div style="flex:1;"></div>
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#7e7e97;">step {{ cStep }} / 2</div>
+      </div>
+
+      <!-- STEP 1: metadata -->
+      <sc-if value="{{ cStep1 }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; gap:14px;">
+        <div style="border-radius:20px; padding:18px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.08); display:flex; flex-direction:column; gap:14px;">
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em; text-transform:uppercase;">the facts &middot; you set the metadata</div>
+          <div>
+            <div style="font-size:12px; color:#9494ad; margin-bottom:6px;">what's the pair? (the underlying fact)</div>
+            <input type="text" value="{{ fact }}" onInput="{{ onFact }}" placeholder="e.g. SOL beats ETH this cycle" style="width:100%; padding:13px 14px; border-radius:12px; border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.25); color:#f4f4fb; font-size:15px; outline:none;"/>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <div style="flex:1;">
+              <div style="font-size:12px; color:#9494ad; margin-bottom:6px;">receipt symbol</div>
+              <input type="text" value="{{ recSym }}" onInput="{{ onRecSym }}" maxlength="7" placeholder="TRI" style="width:100%; padding:13px 14px; border-radius:12px; border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.25); color:#f4f4fb; font-size:15px; outline:none; text-transform:uppercase;"/>
+            </div>
+            <div style="flex:none; width:84px;">
+              <div style="font-size:12px; color:#9494ad; margin-bottom:6px;">icon</div>
+              <input type="text" value="{{ emoji }}" onInput="{{ onEmoji }}" maxlength="2" style="width:100%; padding:13px 0; border-radius:12px; border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.25); color:#f4f4fb; font-size:18px; outline:none; text-align:center;"/>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:12px; color:#9494ad; margin-bottom:6px;">receipt name</div>
+            <input type="text" value="{{ recName }}" onInput="{{ onRecName }}" placeholder="My Triad Receipt" style="width:100%; padding:13px 14px; border-radius:12px; border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.25); color:#f4f4fb; font-size:15px; outline:none;"/>
+          </div>
+          <div>
+            <div style="font-size:12px; color:#9494ad; margin-bottom:8px;">colorway</div>
+            <div style="display:flex; gap:10px;">
+              <sc-for list="{{ themes }}" as="t" hint-placeholder-count="4">
+                <button onClick="{{ t.set }}" style="flex:1; height:38px; border-radius:11px; cursor:pointer; border:2px solid {{ t.border }}; background:linear-gradient(120deg, {{ t.a }}, {{ t.b }});" style-active="transform:scale(0.97)"></button>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <!-- live token preview -->
+        <div style="border-radius:20px; padding:18px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06);">
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:12px;">3 tokens · metadata served live via /api/meta</div>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <sc-for list="{{ tokens }}" as="tk" hint-placeholder-count="3">
+              <div style="display:flex; align-items:center; gap:13px; padding:13px 14px; border-radius:14px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07);">
+                <span style="flex:none; width:42px; height:42px; border-radius:50%; background:{{ tk.bg }}; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:700; color:#07070b;">{{ tk.glyph }}</span>
+                <div style="flex:1; min-width:0;">
+                  <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:15px; font-weight:600; color:#f4f4fb;">{{ tk.sym }}</span><span style="font-family:'IBM Plex Mono',monospace; font-size:9px; padding:2px 6px; border-radius:5px; color:{{ tk.badgeFg }}; background:{{ tk.badgeBg }}; white-space:nowrap;">{{ tk.badge }}</span></div>
+                  <div style="font-size:12px; color:#9494ad; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ tk.name }}</div>
+                </div>
+                <span style="flex:none; font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#54546a;">{{ tk.api }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size:11px; color:#54546a; margin-top:12px; line-height:1.45;">MINTA &amp; MINTB metadata is derived from your facts and resolved dynamically by the metadata API &mdash; you only name the receipt.</div>
+        </div>
+
+        <button onClick="{{ toStep2 }}" style="width:100%; padding:16px; border:none; border-radius:14px; font-family:'Space Grotesk'; font-size:15.5px; font-weight:600; color:#07070b; background:linear-gradient(100deg,#2fe6c0,#a06bff); cursor:pointer;" style-active="transform:scale(0.98)">Next · seed &amp; deploy</button>
+      </div>
+      </sc-if>
+
+      <!-- STEP 2: seed + amms -->
+      <sc-if value="{{ cStep2 }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; flex-direction:column; gap:14px;">
+        <div style="border-radius:20px; padding:18px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.08);">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em; text-transform:uppercase;">seed liquidity</span>
+            <span style="font-variant-numeric:tabular-nums;"><span style="font-size:24px; font-weight:700; color:#f4f4fb;">${{ seedFmt }}</span></span>
+          </div>
+          <input type="range" min="1000" max="50000" step="500" value="{{ seed }}" onInput="{{ onSeed }}" style="width:100%; accent-color:#a06bff; margin-bottom:8px;"/>
+          <div style="font-size:12px; color:#7e7e97;">your USDC is split 50/50 to seed the synthetic reserves, then anchored by the two USDC pools.</div>
+        </div>
+
+        <div style="border-radius:20px; padding:18px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.08);">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em; text-transform:uppercase;">max leverage band</span>
+            <span style="font-variant-numeric:tabular-nums;"><span style="font-size:24px; font-weight:700; color:#2fe6c0;">{{ levMax }}</span><span style="font-size:15px; color:#7e7e97;">&times;</span></span>
+          </div>
+          <input type="range" min="2" max="10" step="1" value="{{ levMax }}" onInput="{{ onLevMax }}" style="width:100%; accent-color:#2fe6c0;"/>
+        </div>
+
+        <!-- 3 AMMs to deploy -->
+        <div style="border-radius:20px; padding:18px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06);">
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:12px;">3 AMMs created atomically</div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <sc-for list="{{ amms }}" as="m" hint-placeholder-count="3">
+              <div style="display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:13px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07);">
+                <span style="flex:none; width:24px; height:24px; border-radius:7px; background:{{ m.bg }}; color:{{ m.fg }}; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center;">{{ m.n }}</span>
+                <div style="flex:1;"><div style="font-size:13.5px; color:#eaeaf2; font-weight:500;">{{ m.pair }}</div><div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#7e7e97; margin-top:2px;">{{ m.role }}</div></div>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#9494ad;">{{ m.seed }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:10px;">
+          <button onClick="{{ toStep1 }}" style="flex:none; width:54px; padding:16px 0; border:1px solid rgba(255,255,255,0.1); border-radius:14px; background:rgba(255,255,255,0.03); color:#cfcfe0; font-size:15px; cursor:pointer;">&larr;</button>
+          <button onClick="{{ launch }}" style="flex:1; padding:16px; border:none; border-radius:14px; font-family:'Space Grotesk'; font-size:15.5px; font-weight:600; color:#07070b; background:linear-gradient(100deg,#2fe6c0,#a06bff); cursor:pointer;" style-active="transform:scale(0.98)">Deploy {{ recSym }} + 3 AMMs</button>
+        </div>
+        <div style="text-align:center; font-size:10.5px; color:#54546a;">one transaction · receipt mint + metadata + three CPMM pools · tx introspection enforces all-or-nothing</div>
+      </div>
+      </sc-if>
+
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============ PROVIDE (deposit/withdraw) ============ -->
+  <sc-if value="{{ viewProvide }}" hint-placeholder-val="{{ false }}">
+  <div style="position:relative; z-index:10; width:100%; display:flex; justify-content:center; padding:18px clamp(14px,3vw,32px) 60px;">
+    <div style="width:100%; max-width:480px; display:flex; flex-direction:column; gap:14px;">
+
+      <!-- pair header -->
+      <div style="display:flex; align-items:center; gap:13px; padding:4px 2px;">
+        <span style="flex:none; display:flex;"><span style="width:34px; height:34px; border-radius:50%; background:{{ themeA }}; border:2px solid #0a0a12;"></span><span style="width:34px; height:34px; border-radius:50%; background:{{ themeB }}; border:2px solid #0a0a12; margin-left:-11px;"></span></span>
+        <div style="flex:1; min-width:0;"><div style="font-size:17px; font-weight:700; color:#f4f4fb; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ pairTitle }}</div><div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#7e7e97;">{{ recSym }} receipt · {{ navRate }}</div></div>
+        <div style="flex:none; text-align:right;"><div style="font-size:15px; font-weight:700; color:#2fe6c0;">{{ apr }}</div><div style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#7e7e97;">EST APY · USD-eq</div></div>
+      </div>
+
+      <!-- provide / charts tabs -->
+      <div style="display:flex; gap:6px; padding:5px; border-radius:14px; background:rgba(0,0,0,0.25);">
+        <button onClick="{{ setTrade }}" style="flex:1; padding:10px 0; border:none; border-radius:10px; font-family:'Space Grotesk'; font-size:13.5px; font-weight:600; cursor:pointer; color:{{ tradeTabFg }}; background:{{ tradeTabBg }};">Provide</button>
+        <button onClick="{{ setCharts }}" style="flex:1; padding:10px 0; border:none; border-radius:10px; font-family:'Space Grotesk'; font-size:13.5px; font-weight:600; cursor:pointer; color:{{ chartTabFg }}; background:{{ chartTabBg }};">Charts</button>
+      </div>
+
+      <sc-if value="{{ pTabTrade }}" hint-placeholder-val="{{ true }}">
+      <!-- vault card -->
+      <div style="border-radius:24px; padding:18px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.08);">
+        <div style="display:flex; gap:6px; padding:5px; border-radius:14px; background:rgba(0,0,0,0.25); margin-bottom:18px;">
+          <button onClick="{{ setDeposit }}" style="flex:1; padding:11px 0; border:none; border-radius:10px; font-family:'Space Grotesk'; font-size:14px; font-weight:600; cursor:pointer; color:{{ depTabFg }}; background:{{ depTabBg }};">Deposit</button>
+          <button onClick="{{ setWithdraw }}" style="flex:1; padding:11px 0; border:none; border-radius:10px; font-family:'Space Grotesk'; font-size:14px; font-weight:600; cursor:pointer; color:{{ wdTabFg }}; background:{{ wdTabBg }};">Withdraw</button>
+        </div>
+
+        <div style="border-radius:16px; padding:15px 16px; background:rgba(0,0,0,0.22); border:1px solid rgba(255,255,255,0.06);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;"><span style="font-size:12px; color:#9494ad;">{{ payLabel }}</span><span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#7e7e97;">balance {{ payBalance }}</span></div>
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+            <span style="font-size:30px; font-weight:700; color:#f4f4fb; font-variant-numeric:tabular-nums; white-space:nowrap;">{{ payAmount }}</span>
+            <span style="flex:none; display:flex; align-items:center; gap:8px; padding:7px 12px 7px 8px; border-radius:999px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08);"><span style="width:22px; height:22px; border-radius:50%; background:{{ payTokenBg }}; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#07070b;">{{ payTokenGlyph }}</span><span style="font-weight:600; font-size:14px; color:#eaeaf2;">{{ payToken }}</span></span>
+          </div>
+          <input type="range" min="0" max="{{ payMax }}" step="{{ payStep }}" value="{{ payValue }}" onInput="{{ onPay }}" style="width:100%; accent-color:#a06bff; margin-top:12px;"/>
+          <div style="display:flex; gap:7px; margin-top:8px;">
+            <sc-for list="{{ payChips }}" as="c" hint-placeholder-count="4"><button onClick="{{ c.set }}" style="flex:1; padding:7px 0; border-radius:9px; border:1px solid {{ c.border }}; background:{{ c.bg }}; color:{{ c.fg }}; font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:500; cursor:pointer;">{{ c.label }}</button></sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:center; margin:-9px 0; position:relative; z-index:2;"><div style="width:34px; height:34px; border-radius:11px; background:#14141e; border:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center; color:#9494ad; font-size:16px;">&#8595;</div></div>
+
+        <div style="border-radius:16px; padding:15px 16px; background:rgba(0,0,0,0.22); border:1px solid rgba(255,255,255,0.06);">
+          <div style="font-size:12px; color:#9494ad; margin-bottom:8px;">you receive</div>
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+            <span style="font-size:30px; font-weight:700; color:#2fe6c0; font-variant-numeric:tabular-nums; white-space:nowrap;">{{ recvAmount }}</span>
+            <span style="flex:none; display:flex; align-items:center; gap:8px; padding:7px 12px 7px 8px; border-radius:999px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08);"><span style="width:22px; height:22px; border-radius:50%; background:{{ recvTokenBg }}; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#07070b;">{{ recvTokenGlyph }}</span><span style="font-weight:600; font-size:14px; color:#eaeaf2;">{{ recvToken }}</span></span>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; padding:13px 4px 4px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#7e7e97;"><span>{{ rateLine }}</span><span>{{ shareLine }}</span></div>
+
+        <button onClick="{{ confirmTx }}" style="width:100%; margin-top:8px; padding:16px; border:none; border-radius:14px; font-family:'Space Grotesk'; font-size:15.5px; font-weight:600; color:{{ ctaFg }}; background:{{ ctaBg }}; cursor:{{ ctaCursor }}; opacity:{{ ctaOpacity }}; transition:transform .15s;" style-active="transform:scale(0.98)">{{ ctaLabel }}</button>
+      </div>
+
+      <sc-if value="{{ hasPos }}" hint-placeholder-val="{{ false }}">
+      <div style="border-radius:20px; padding:18px; background:linear-gradient(150deg, rgba(47,230,192,0.07), rgba(160,107,255,0.06)); border:1px solid rgba(255,255,255,0.08); display:flex; flex-wrap:wrap; gap:16px; justify-content:space-between; align-items:center;">
+        <div><div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em;">YOUR POSITION</div><div style="font-size:28px; font-weight:700; color:#f4f4fb; margin-top:5px; font-variant-numeric:tabular-nums;">{{ posValue }}</div><div style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#7e7e97; margin-top:3px;">{{ mimBal }} {{ recSym }}</div></div>
+        <div style="text-align:right;"><div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em;">EARNED</div><div style="font-size:20px; font-weight:700; color:#2fe6c0; margin-top:5px; font-variant-numeric:tabular-nums;">{{ earned }}</div><div style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#7e7e97; margin-top:3px;">share {{ poolShare }}</div></div>
+      </div>
+      </sc-if>
+      </sc-if>
+
+      <!-- ===== CHARTS ===== -->
+      <sc-if value="{{ pTabCharts }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; flex-direction:column; gap:14px;">
+
+        <!-- APY (USD-equiv) -->
+        <div style="border-radius:18px; padding:16px; background:linear-gradient(150deg, rgba(47,230,192,0.07), rgba(160,107,255,0.05)); border:1px solid rgba(255,255,255,0.08);">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+            <div><div style="font-size:30px; font-weight:700; color:#2fe6c0; line-height:1; font-variant-numeric:tabular-nums;">{{ apyTotal }}</div><div style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#7e7e97; margin-top:6px; letter-spacing:0.06em;">EST APY · USD-EQUIV · QUOTE {{ quote }}</div></div>
+            <div style="display:flex; gap:16px;">
+              <sc-for list="{{ apyParts }}" as="ap" hint-placeholder-count="2">
+                <div style="text-align:right;"><div style="font-size:15px; font-weight:700; color:#eaeaf2; font-variant-numeric:tabular-nums;">{{ ap.val }}</div><div style="font-family:'IBM Plex Mono',monospace; font-size:9px; color:#7e7e97; margin-top:3px;">{{ ap.label }}</div></div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="font-size:10.5px; color:#54546a; margin-top:10px; line-height:1.4;">yields normalized to USD regardless of the configured quote asset ({{ quote }} by default).</div>
+        </div>
+
+        <!-- mint vs redeem quote cost -->
+        <div style="border-radius:20px; padding:16px 16px 12px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07);">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:4px; flex-wrap:wrap;">
+            <div><div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.1em; text-transform:uppercase;">receipt quote cost</div><div style="font-size:12.5px; color:#7e7e97; margin-top:3px;">{{ recSym }} / {{ quote }} · redeemable vs mintable</div></div>
+            <div style="text-align:right;"><div style="font-size:22px; font-weight:700; color:#f4f4fb; font-variant-numeric:tabular-nums;">{{ navNow }}</div><div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:{{ chgColor }};">{{ navChg }} · {{ tf }}</div></div>
+          </div>
+          <div style="display:flex; gap:14px; margin:6px 0 4px; font-family:'IBM Plex Mono',monospace; font-size:10.5px;">
+            <span style="color:#a06bff;">&#9632; mint (ask) {{ mintNow }}</span>
+            <span style="color:#2fe6c0;">&#9632; redeem (bid) {{ redeemNow }}</span>
+          </div>
+          <div onMouseMove="{{ onChartMove }}" onMouseLeave="{{ onChartLeave }}" onTouchMove="{{ onChartTouch }}" style="position:relative; width:100%; touch-action:none; cursor:crosshair;">
+            <svg width="100%" viewBox="0 0 320 150" preserveAspectRatio="none" style="display:block; height:clamp(150px,30vw,200px);">
+              <defs><linearGradient id="spreadg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(160,107,255,0.18)"/><stop offset="1" stop-color="rgba(47,230,192,0.10)"/></linearGradient></defs>
+              <path d="{{ spreadFill }}" fill="url(#spreadg)"/>
+              <polyline points="{{ redeemLine }}" fill="none" stroke="#2fe6c0" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+              <polyline points="{{ mintLine }}" fill="none" stroke="#a06bff" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+              <sc-if value="{{ hoverOn }}" hint-placeholder-val="{{ false }}">
+                <line x1="{{ crossX }}" y1="0" x2="{{ crossX }}" y2="150" stroke="rgba(255,255,255,0.35)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+                <circle cx="{{ crossX }}" cy="{{ cyMint }}" r="3.4" fill="#a06bff" stroke="#0c0c16" stroke-width="1.5"/>
+                <circle cx="{{ crossX }}" cy="{{ cyRedeem }}" r="3.4" fill="#2fe6c0" stroke="#0c0c16" stroke-width="1.5"/>
+              </sc-if>
+            </svg>
+            <sc-if value="{{ hoverOn }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute; top:2px; left:{{ hoverPct }}; transform:translateX(-50%); pointer-events:none; background:#14141e; border:1px solid rgba(255,255,255,0.12); border-radius:9px; padding:7px 9px; white-space:nowrap; box-shadow:0 8px 20px rgba(0,0,0,0.5);">
+                <div style="font-family:'IBM Plex Mono',monospace; font-size:9px; color:#7e7e97; margin-bottom:3px;">{{ hovLabel }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#a06bff;">mint {{ hovMint }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#2fe6c0;">redeem {{ hovRedeem }}</div>
+              </div>
+            </sc-if>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#54546a; margin-top:6px;"><span>{{ xStart }}</span><span>now</span></div>
+          <div style="display:flex; gap:6px; margin-top:10px;">
+            <sc-for list="{{ tfChips }}" as="t" hint-placeholder-count="5"><button onClick="{{ t.set }}" style="flex:1; padding:7px 0; border-radius:9px; border:1px solid {{ t.border }}; background:{{ t.bg }}; color:{{ t.fg }}; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; cursor:pointer;">{{ t.label }}</button></sc-for>
+          </div>
+        </div>
+
+        <!-- constituent composition -->
+        <div style="border-radius:20px; padding:16px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07);">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; flex-wrap:wrap; gap:6px;">
+            <div style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.1em; text-transform:uppercase;">backing · per receipt</div>
+            <div style="display:flex; gap:12px; font-family:'IBM Plex Mono',monospace; font-size:10.5px;"><span style="color:{{ themeA }};">&#9632; MINTA {{ vaNow }}</span><span style="color:{{ themeB }};">&#9632; MINTB {{ vbNow }}</span></div>
+          </div>
+          <svg width="100%" viewBox="0 0 320 130" preserveAspectRatio="none" style="display:block; height:clamp(120px,24vw,160px); margin-top:6px;">
+            <path d="{{ aArea }}" fill="{{ aFill }}"/>
+            <path d="{{ bArea }}" fill="{{ bFill }}"/>
+            <polyline points="{{ vaLine }}" fill="none" stroke="{{ themeA }}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+            <polyline points="{{ navTopLine }}" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+          </svg>
+          <div style="font-size:10.5px; color:#54546a; margin-top:8px; line-height:1.4;">the heavier band is the side the crank minted into &mdash; &ldquo;mint the loser&rdquo; drift, in USD terms.</div>
+        </div>
+
+      </div>
+      </sc-if>
+
+      <!-- ===== CONTRACTS (both tabs) ===== -->
+      <div style="border-radius:18px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); overflow:hidden;">
+        <button onClick="{{ toggleContracts }}" style="width:100%; display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border:none; background:none; cursor:pointer;">
+          <span style="display:flex; align-items:center; gap:8px;"><span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#cfcfe0; letter-spacing:0.08em;">CONTRACTS &amp; MINTS</span><span style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#54546a;">tap to copy</span></span>
+          <span style="color:#7e7e97; font-size:12px; transform:rotate({{ contractsRot }}); transition:transform .2s; display:inline-block;">&#9662;</span>
+        </button>
+        <sc-if value="{{ contractsOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:0 12px 12px; display:flex; flex-direction:column; gap:6px;">
+          <sc-for list="{{ contracts }}" as="c" hint-placeholder-count="6">
+            <button onClick="{{ c.copy }}" style="display:flex; align-items:center; gap:10px; padding:11px 12px; border:1px solid {{ c.border }}; border-radius:11px; background:{{ c.bg }}; cursor:pointer; text-align:left; width:100%;" style-active="transform:scale(0.995)">
+              <span style="flex:none; width:8px; height:8px; border-radius:50%; background:{{ c.dot }};"></span>
+              <span style="flex:1; min-width:0;"><span style="display:block; font-size:11.5px; color:#cfcfe0; font-weight:500;">{{ c.label }}</span><span style="display:block; font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#7e7e97; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; user-select:all;">{{ c.addr }}</span></span>
+              <span style="flex:none; font-family:'IBM Plex Mono',monospace; font-size:10px; color:{{ c.tagColor }};">{{ c.tag }}</span>
+            </button>
+          </sc-for>
+          <div style="font-size:10px; color:#54546a; margin-top:4px; padding:0 2px; line-height:1.4;">receipt mint is Token-2022 (transfer hook). MINTA/MINTB are SPL. served from the indexer DB.</div>
+        </div>
+        </sc-if>
+      </div>
+
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============ WALLET MODAL ============ -->
+  <sc-if value="{{ walletOpen }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeWallet }}" style="position:fixed; inset:0; z-index:80; background:rgba(5,5,9,0.72); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:18px; animation:mim-fadein .2s ease;">
+    <div onClick="{{ stop }}" style="width:min(420px,100%); background:#0e0e18; border:1px solid rgba(255,255,255,0.1); border-radius:22px; padding:24px; animation:mim-pop .3s cubic-bezier(.2,.9,.3,1);">
+      <div style="font-size:18px; font-weight:600; color:#f4f4fb; margin-bottom:4px;">Connect a wallet</div>
+      <div style="font-size:12.5px; color:#7e7e97; margin-bottom:18px;">pick your poison. mainnet stakes.</div>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <sc-for list="{{ wallets }}" as="w" hint-placeholder-count="3">
+          <button onClick="{{ w.pick }}" style="display:flex; align-items:center; gap:13px; padding:14px; border:1px solid rgba(255,255,255,0.09); border-radius:14px; background:rgba(255,255,255,0.03); cursor:pointer; text-align:left;" style-active="transform:scale(0.99)">
+            <span style="flex:none; width:36px; height:36px; border-radius:10px; background:{{ w.color }}; display:flex; align-items:center; justify-content:center; font-size:18px;">{{ w.glyph }}</span>
+            <span style="flex:1; font-size:14.5px; font-weight:600; color:#eaeaf2;">{{ w.name }}</span>
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#54546a;">{{ w.tag }}</span>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============ TX MODAL ============ -->
+  <sc-if value="{{ txOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed; inset:0; z-index:70; background:rgba(5,5,9,0.74); backdrop-filter:blur(7px); display:flex; align-items:center; justify-content:center; padding:18px; animation:mim-fadein .2s ease;">
+    <div style="width:min(400px,100%); background:#0c0c16; border:1px solid rgba(255,255,255,0.1); border-radius:24px; padding:30px 24px 24px; animation:mim-pop .32s cubic-bezier(.2,.9,.3,1); text-align:center;">
+      <sc-if value="{{ txWorking }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; flex-direction:column; align-items:center;">
+        <div style="position:relative; width:104px; height:104px; display:flex; align-items:center; justify-content:center; margin-bottom:20px;">
+          <svg width="104" height="104" viewBox="0 0 130 130" style="position:absolute; inset:0; animation:mim-spin 3s linear infinite;"><circle cx="65" cy="65" r="58" fill="none" stroke="rgba(160,107,255,0.25)" stroke-width="2" stroke-dasharray="40 220"/></svg>
+          <svg width="70" height="67" viewBox="0 0 96 92" fill="none" style="filter:drop-shadow(0 0 14px rgba(160,107,255,0.6)); animation:mim-floaty 2.4s ease-in-out infinite;"><path d="M48 8 L88 80 L8 80 Z" stroke="url(#mg)" stroke-width="3" stroke-linejoin="round"/><circle cx="48" cy="8" r="7" fill="#2fe6c0"/><circle cx="88" cy="80" r="7" fill="#a06bff"/><circle cx="8" cy="80" r="7" fill="#f2c14e"/><defs><linearGradient id="mg" x1="0" y1="0" x2="96" y2="92"><stop stop-color="#2fe6c0"/><stop offset="1" stop-color="#a06bff"/></linearGradient></defs></svg>
+        </div>
+        <div style="font-size:17px; font-weight:600; color:#f4f4fb;">{{ txTitle }}</div>
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#a06bff; margin-top:8px; min-height:16px;">{{ txStatus }}</div>
+        <div style="width:100%; max-width:230px; height:5px; border-radius:99px; background:rgba(255,255,255,0.08); margin-top:16px; overflow:hidden;"><div style="height:100%; width:{{ txPct }}; background:linear-gradient(90deg,#2fe6c0,#a06bff); border-radius:99px; transition:width .3s ease;"></div></div>
+      </div>
+      </sc-if>
+      <sc-if value="{{ txDone }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; flex-direction:column; align-items:center;">
+        <div style="width:70px; height:70px; border-radius:50%; background:radial-gradient(circle, rgba(47,230,192,0.28), transparent 70%); display:flex; align-items:center; justify-content:center; margin-bottom:16px;"><svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#2fe6c0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 6px rgba(47,230,192,0.7));"/></svg></div>
+        <div style="font-size:20px; font-weight:700; color:#f4f4fb;">{{ doneTitle }}</div>
+        <div style="font-size:14px; color:#9494ad; margin-top:8px; max-width:300px; line-height:1.5;">{{ doneSub }}</div>
+        <button onClick="{{ finishTx }}" style="width:100%; margin-top:22px; padding:15px; border:none; border-radius:14px; font-family:'Space Grotesk'; font-size:15px; font-weight:600; color:#07070b; background:linear-gradient(100deg,#2fe6c0,#a06bff); cursor:pointer;" style-active="transform:scale(0.98)">{{ doneCta }}</button>
+      </div>
+      </sc-if>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;defaultReceiptSymbol&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;TRI&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;quoteToken&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;USDC&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = {
+    connected: false, walletOpen: false, addr: null,
+    view: 'home',                 // home | create | provide
+    // create
+    cStep: 1, fact: '', recSym: 'TRI', recName: 'Triad Receipt', emoji: '✦', themeIdx: 0,
+    seed: 5000, levMax: 5,
+    // provide
+    mode: 'deposit', depAmt: 1000, wdPct: 50, usdcBal: 12500, mim: 0, deposited: 0,
+    rate: 1.034, tvlNum: 4230000, aprNum: 18.6,
+    activePair: null,             // {name, sym, a, b} chosen in provide
+    // charts / contracts
+    pTab: 'trade', tf: '1D', hoverF: null, contractsOpen: false, copied: null,
+    // tx
+    tx: null, txPct: 0, txKind: null, txStatus: '',
+  };
+
+  THEMES = [
+    { a: '#2fe6c0', b: '#a06bff' }, { a: '#f2c14e', b: '#ff5470' },
+    { a: '#7ad9ff', b: '#2fe6c0' }, { a: '#ff8fb0', b: '#a06bff' },
+  ];
+  PAIRS = [
+    { name: 'SOL outruns ETH', sym: 'SOLE', tvlN: 1840000, aprN: 22.4, ti: 0 },
+    { name: 'BONK flips WIF', sym: 'BWIF', tvlN: 920000, aprN: 31.1, ti: 1 },
+    { name: 'Majors vs memes', sym: 'MAJM', tvlN: 1470000, aprN: 14.8, ti: 2 },
+  ];
+
+  componentDidMount() {
+    if (this.props.defaultReceiptSymbol) this.setState({ recSym: ('' + this.props.defaultReceiptSymbol).toUpperCase().slice(0, 7) });
+    this.timer = setInterval(() => this.tick(), 1400);
+  }
+  componentWillUnmount() { clearInterval(this.timer); this.clearTx(); }
+  tick() {
+    this.setState((s) => ({
+      rate: s.rate + 0.00018 + Math.random() * 0.00012,
+      tvlNum: Math.max(1e6, s.tvlNum + (Math.random() - 0.42) * 24000),
+      aprNum: Math.max(6, Math.min(34, s.aprNum + (Math.random() - 0.5) * 0.7)),
+    }));
+  }
+
+  // nav
+  openWallet = () => this.setState({ walletOpen: true });
+  closeWallet = () => this.setState({ walletOpen: false });
+  stop = (e) => { if (e && e.stopPropagation) e.stopPropagation(); };
+  pickWallet = () => this.setState({ walletOpen: false, connected: true, addr: '7xKq' + Math.random().toString(36).slice(2, 6) + '…' + Math.random().toString(36).slice(2, 6) });
+  disconnect = () => this.setState({ connected: false, addr: null, view: 'home' });
+  goHome = () => this.setState({ view: 'home' });
+  goCreate = () => this.setState({ view: 'create', cStep: 1 });
+  goProvideNew = () => this.setState({ view: 'provide', activePair: { name: this.state.fact || 'SOL outruns ETH', sym: this.state.recSym, ti: this.state.themeIdx } });
+  openPair = (p) => this.setState({ view: 'provide', activePair: { name: p.name, sym: p.sym, ti: p.ti }, recSym: p.sym, themeIdx: p.ti });
+
+  // create fields
+  onFact = (e) => this.setState({ fact: e.target.value });
+  onRecSym = (e) => this.setState({ recSym: e.target.value.toUpperCase().slice(0, 7) });
+  onRecName = (e) => this.setState({ recName: e.target.value });
+  onEmoji = (e) => this.setState({ emoji: e.target.value.slice(0, 2) });
+  setTheme = (i) => this.setState({ themeIdx: i });
+  toStep2 = () => this.setState({ cStep: 2 });
+  toStep1 = () => this.setState({ cStep: 1 });
+  onSeed = (e) => this.setState({ seed: +e.target.value });
+  onLevMax = (e) => this.setState({ levMax: +e.target.value });
+
+  // provide
+  setDeposit = () => this.setState({ mode: 'deposit' });
+  setWithdraw = () => this.setState({ mode: 'withdraw' });
+  setTrade = () => this.setState({ pTab: 'trade' });
+  setCharts = () => this.setState({ pTab: 'charts' });
+  setTf = (t) => this.setState({ tf: t, hoverF: null });
+  onChartMove = (e) => { const r = e.currentTarget.getBoundingClientRect(); this.setState({ hoverF: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) }); };
+  onChartTouch = (e) => { if (e.touches && e.touches[0]) { const r = e.currentTarget.getBoundingClientRect(); this.setState({ hoverF: Math.max(0, Math.min(1, (e.touches[0].clientX - r.left) / r.width)) }); } };
+  onChartLeave = () => this.setState({ hoverF: null });
+  toggleContracts = () => this.setState((s) => ({ contractsOpen: !s.contractsOpen }));
+  copyAddr = (addr) => { try { navigator.clipboard && navigator.clipboard.writeText(addr); } catch (e) {} this.setState({ copied: addr }); clearTimeout(this._cpT); this._cpT = setTimeout(() => this.setState({ copied: null }), 1300); };
+  onPay = (e) => { const v = +e.target.value; this.state.mode === 'deposit' ? this.setState({ depAmt: v }) : this.setState({ wdPct: v }); };
+  setDepAmt = (v) => this.setState({ depAmt: v });
+  setWdPct = (v) => this.setState({ wdPct: v });
+
+  clearTx() { if (this.txTimeouts) this.txTimeouts.forEach((t) => clearTimeout(t)); this.txTimeouts = []; }
+  runTx(kind, stages, onDone) {
+    this.clearTx();
+    this.setState({ tx: 'working', txPct: 6, txKind: kind, txStatus: stages[0].status });
+    stages.forEach((st) => {
+      const id = setTimeout(() => {
+        if (st.pct >= 100) { this.setState((s) => ({ ...onDone(s), tx: 'done', txPct: 100 })); }
+        else this.setState({ txPct: st.pct, txStatus: st.status });
+      }, st.at);
+      this.txTimeouts.push(id);
+    });
+  }
+  launch = () => {
+    this.runTx('launch', [
+      { at: 360, pct: 26, status: 'creating receipt mint + metadata…' },
+      { at: 760, pct: 50, status: 'writing MINTA / MINTB to /api/meta…' },
+      { at: 1160, pct: 72, status: 'deploying MINTA/MINTB pool…' },
+      { at: 1560, pct: 90, status: 'deploying anchor pools…' },
+      { at: 1960, pct: 100, status: 'done' },
+    ], (s) => ({ tvlNum: s.tvlNum + s.seed }));
+  };
+  confirmTx = () => {
+    const m = this.state.mode;
+    if (m === 'deposit' && this.state.depAmt < 1) return;
+    if (m === 'withdraw' && this.state.mim < 1e-4) return;
+    this.runTx(m, [
+      { at: 340, pct: 36, status: m === 'deposit' ? 'routing through 3 pools…' : 'burning receipt…' },
+      { at: 740, pct: 66, status: m === 'deposit' ? 'minting your receipt…' : 'pulling from reserves…' },
+      { at: 1140, pct: 100, status: 'done' },
+    ], (s) => {
+      if (m === 'deposit') {
+        const amt = Math.min(s.depAmt, s.usdcBal), minted = amt / s.rate;
+        return { mim: s.mim + minted, deposited: s.deposited + amt, usdcBal: s.usdcBal - amt, tvlNum: s.tvlNum + amt };
+      }
+      const burn = s.mim * (s.wdPct / 100), out = burn * s.rate, costOut = s.deposited * (s.wdPct / 100);
+      return { mim: s.mim - burn, deposited: Math.max(0, s.deposited - costOut), usdcBal: s.usdcBal + out, tvlNum: Math.max(1e6, s.tvlNum - out) };
+    });
+  };
+  finishTx = () => {
+    const kind = this.state.txKind;
+    this.setState({ tx: null, txPct: 0, view: kind === 'launch' ? 'provide' : this.state.view, activePair: kind === 'launch' ? { name: this.state.fact || 'My pair', sym: this.state.recSym, ti: this.state.themeIdx } : this.state.activePair });
+  };
+
+  fmtUsd(n) { if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M'; if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'K'; return '$' + n.toFixed(2); }
+  fmtN(n) { if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M'; if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'; return (+n).toFixed(2); }
+  hashStr(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619); return h >>> 0; }
+  mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  genAddr(seed) { const cs = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'; const r = this.mulberry32(seed >>> 0); let s = ''; for (let i = 0; i < 44; i++) s += cs[Math.floor(r() * cs.length)]; return s; }
+  toRgba(hex, a) { const h = hex.replace('#', ''); const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16); return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')'; }
+
+  renderVals() {
+    const s = this.state;
+    const th = this.THEMES[s.themeIdx] || this.THEMES[0];
+    const sym = s.recSym || 'TRI';
+    const factName = s.fact || 'your pair';
+    const quote = this.props.quoteToken || 'USDC';
+
+    // create token previews
+    const tokens = [
+      { sym: sym, name: s.recName || 'Triad Receipt', badge: 'RECEIPT', badgeFg: '#07070b', badgeBg: '#2fe6c0', bg: `linear-gradient(120deg, ${th.a}, ${th.b})`, glyph: s.emoji || '✦', api: 'creator-set' },
+      { sym: 'MINTA', name: factName + ' · side A', badge: 'SYNTH A', badgeFg: '#0c0c16', badgeBg: th.a, bg: th.a, glyph: 'A', api: '/api/meta' },
+      { sym: 'MINTB', name: factName + ' · side B', badge: 'SYNTH B', badgeFg: '#0c0c16', badgeBg: th.b, bg: th.b, glyph: 'B', api: '/api/meta' },
+    ];
+    const themes = this.THEMES.map((t, i) => ({ a: t.a, b: t.b, set: () => this.setTheme(i), border: s.themeIdx === i ? '#f4f4fb' : 'rgba(255,255,255,0.12)' }));
+
+    const half = s.seed / 2;
+    const amms = [
+      { n: '1', pair: 'MINTA / MINTB', role: 'primary leverage engine', bg: 'rgba(47,230,192,0.14)', fg: '#2fe6c0', seed: this.fmtUsd(s.seed) },
+      { n: '2', pair: 'MINTA / ' + quote, role: 'anchor + TWAP', bg: 'rgba(242,193,78,0.14)', fg: '#f2c14e', seed: this.fmtUsd(half) },
+      { n: '3', pair: 'MINTB / ' + quote, role: 'anchor + TWAP', bg: 'rgba(160,107,255,0.14)', fg: '#a06bff', seed: this.fmtUsd(half) },
+    ];
+
+    // provide
+    const navRate = '$' + s.rate.toFixed(3);
+    const mode = s.mode, isDep = mode === 'deposit';
+    const depAmt = Math.min(s.depAmt, s.usdcBal);
+    const wdBurn = s.mim * (s.wdPct / 100);
+    const payAmount = isDep ? Math.round(depAmt).toLocaleString() : this.fmtN(wdBurn);
+    const recvAmount = isDep ? this.fmtN(depAmt / s.rate) : this.fmtUsd(wdBurn * s.rate).replace('$', '');
+    const value = s.mim * s.rate, earned = value - s.deposited;
+    const poolShareN = s.tvlNum > 0 ? (value / s.tvlNum) * 100 : 0;
+
+    const payChips = isDep
+      ? [{ label: '$500', v: 500 }, { label: '$2.5K', v: 2500 }, { label: '$10K', v: 10000 }, { label: 'MAX', v: Math.floor(s.usdcBal) }].map((c) => {
+          const on = s.depAmt === c.v; return { label: c.label, set: () => this.setDepAmt(c.v), border: on ? '#a06bff' : 'rgba(255,255,255,0.1)', bg: on ? 'rgba(160,107,255,0.14)' : 'rgba(255,255,255,0.02)', fg: on ? '#cdbcff' : '#9494ad' }; })
+      : [{ label: '25%', v: 25 }, { label: '50%', v: 50 }, { label: '75%', v: 75 }, { label: '100%', v: 100 }].map((c) => {
+          const on = s.wdPct === c.v; return { label: c.label, set: () => this.setWdPct(c.v), border: on ? '#a06bff' : 'rgba(255,255,255,0.1)', bg: on ? 'rgba(160,107,255,0.14)' : 'rgba(255,255,255,0.02)', fg: on ? '#cdbcff' : '#9494ad' }; });
+
+    const canDep = isDep && depAmt >= 1, canWd = !isDep && s.mim > 1e-4;
+    const ctaOk = canDep || canWd;
+
+    const wallets = [
+      { name: 'Phantom', glyph: '👻', tag: 'detected', color: 'linear-gradient(135deg,#ab9ff2,#6d5bd0)', pick: this.pickWallet },
+      { name: 'Backpack', glyph: '🎒', tag: '', color: 'linear-gradient(135deg,#e33e3e,#b01e1e)', pick: this.pickWallet },
+      { name: 'Solflare', glyph: '🔆', tag: '', color: 'linear-gradient(135deg,#ffb429,#ff7a00)', pick: this.pickWallet },
+    ];
+    const pairs = this.PAIRS.map((p) => ({ name: p.name, sym: p.sym, tvl: this.fmtUsd(p.tvlN), apr: p.aprN.toFixed(1) + '%', ca: this.THEMES[p.ti].a, cb: this.THEMES[p.ti].b, open: () => this.openPair(p) }));
+
+    // ----- charts (DB-fed series, mocked deterministically) -----
+    const CFG = {
+      '1H': { n: 13, vol: 0.0016, drift: 0.0001, step: 5, u: 'm' },
+      '1D': { n: 13, vol: 0.004, drift: 0.0005, step: 2, u: 'h' },
+      '1W': { n: 8, vol: 0.009, drift: 0.0016, step: 1, u: 'd' },
+      '1M': { n: 16, vol: 0.014, drift: 0.0035, step: 2, u: 'd' },
+      'ALL': { n: 13, vol: 0.022, drift: 0.006, step: 1, u: 'w' },
+    };
+    const tf = s.tf, cf = CFG[tf] || CFG['1D'];
+    const rnd = this.mulberry32(this.hashStr(sym + '|' + tf));
+    const series = [];
+    let cnav = 1 + rnd() * 0.05, skew = (rnd() - 0.5) * 0.7;
+    for (let i = 0; i < cf.n; i++) {
+      cnav *= 1 + cf.drift + (rnd() - 0.5) * cf.vol; cnav = Math.max(0.55, cnav);
+      skew += (rnd() - 0.5) * cf.vol * 0.9;
+      const sp = 0.003 + rnd() * 0.006;
+      const mint = cnav * (1 + sp / 2), redeem = cnav * (1 - sp / 2);
+      const sm = Math.tanh(skew), va = cnav * (0.5 + 0.42 * sm);
+      series.push({ nav: cnav, mint, redeem, va, vb: cnav - va });
+    }
+    const n = series.length, W = 320;
+    const xc = (i) => (i / (n - 1)) * W;
+    let aHi = -1e9, aLo = 1e9; series.forEach((p) => { aHi = Math.max(aHi, p.mint); aLo = Math.min(aLo, p.redeem); });
+    const aPad = (aHi - aLo) * 0.25 || 0.01; aHi += aPad; aLo -= aPad;
+    const yA = (v) => 10 + (1 - (v - aLo) / (aHi - aLo)) * 130;
+    const mintArr = series.map((p, i) => `${xc(i).toFixed(1)},${yA(p.mint).toFixed(1)}`);
+    const redeemArr = series.map((p, i) => `${xc(i).toFixed(1)},${yA(p.redeem).toFixed(1)}`);
+    const spreadFill = 'M' + mintArr.join(' L ') + ' L ' + redeemArr.slice().reverse().join(' L ') + ' Z';
+    let bHi = 0; series.forEach((p) => { bHi = Math.max(bHi, p.nav); }); bHi *= 1.08;
+    const yB = (v) => 8 + (1 - v / bHi) * 114;
+    const vaArr = series.map((p, i) => `${xc(i).toFixed(1)},${yB(p.va).toFixed(1)}`);
+    const navArr = series.map((p, i) => `${xc(i).toFixed(1)},${yB(p.nav).toFixed(1)}`);
+    const aArea = `M0,${yB(0).toFixed(1)} L ` + vaArr.join(' L ') + ` L ${W},${yB(0).toFixed(1)} Z`;
+    const bArea = 'M' + vaArr.join(' L ') + ' L ' + navArr.slice().reverse().join(' L ') + ' Z';
+    const last = series[n - 1], first = series[0];
+    const chgN = (last.nav - first.nav) / first.nav * 100;
+    const lbl = (k) => k <= 0 ? 'now' : '−' + (k * cf.step) + cf.u;
+    const hov = s.hoverF;
+    let hoverOn = false, hoverPct = '50%', hovMint = '', hovRedeem = '', hovLabel = '', crossX = '0', cyMint = '0', cyRedeem = '0';
+    if (hov != null) {
+      hoverOn = true;
+      const hi = Math.max(0, Math.min(n - 1, Math.round(hov * (n - 1)))), pt = series[hi];
+      hoverPct = ((hi / (n - 1)) * 100).toFixed(2) + '%';
+      hovMint = '$' + pt.mint.toFixed(4); hovRedeem = '$' + pt.redeem.toFixed(4); hovLabel = lbl(n - 1 - hi);
+      crossX = xc(hi).toFixed(1); cyMint = yA(pt.mint).toFixed(1); cyRedeem = yA(pt.redeem).toFixed(1);
+    }
+    const tfChips = ['1H', '1D', '1W', '1M', 'ALL'].map((t) => {
+      const on = tf === t;
+      return { label: t, set: () => this.setTf(t), border: on ? '#a06bff' : 'rgba(255,255,255,0.1)', bg: on ? 'rgba(160,107,255,0.16)' : 'rgba(255,255,255,0.02)', fg: on ? '#cdbcff' : '#9494ad' };
+    });
+    const apyT = s.aprNum;
+    const apyParts = [{ val: (apyT * 0.45).toFixed(1) + '%', label: 'swap fees' }, { val: (apyT * 0.55).toFixed(1) + '%', label: 'arb capture' }];
+    const cbase = this.hashStr(sym + '|ca');
+    const mkC = (off, label, dot) => {
+      const addr = this.genAddr(cbase + off * 97), isC = s.copied === addr;
+      return { label, addr, dot, copy: () => this.copyAddr(addr), border: isC ? 'rgba(47,230,192,0.45)' : 'rgba(255,255,255,0.07)', bg: isC ? 'rgba(47,230,192,0.08)' : 'rgba(255,255,255,0.02)', tag: isC ? 'copied ✓' : 'copy', tagColor: isC ? '#2fe6c0' : '#54546a' };
+    };
+    const contracts = [
+      mkC(1, 'Receipt mint · ' + sym, `linear-gradient(120deg, ${th.a}, ${th.b})`),
+      mkC(2, 'MINTA mint', th.a), mkC(3, 'MINTB mint', th.b),
+      mkC(4, 'Pool · MINTA / MINTB', '#cfcfe0'),
+      mkC(5, 'Pool · MINTA / ' + quote, '#f2c14e'),
+      mkC(6, 'Pool · MINTB / ' + quote, '#f2c14e'),
+    ];
+
+    const kind = s.txKind;
+    const pairTitle = (s.activePair && s.activePair.name) || s.fact || 'SOL outruns ETH';
+
+    return {
+      notConnected: !s.connected, connected: s.connected, walletOpen: s.walletOpen,
+      openWallet: this.openWallet, closeWallet: this.closeWallet, stop: this.stop, wallets,
+      disconnect: this.disconnect, shortAddr: s.addr || '7xKq…f2a1',
+      showBack: s.connected && s.view !== 'home', goHome: this.goHome,
+      viewHome: s.connected && s.view === 'home', viewCreate: s.connected && s.view === 'create', viewProvide: s.connected && s.view === 'provide',
+
+      // home
+      tvl: this.fmtUsd(s.tvlNum), pairCount: '' + (this.PAIRS.length + (s.deposited > 0 ? 1 : 0)), topApr: '31.1%',
+      goCreate: this.goCreate, goProvideNew: this.goProvideNew, pairs,
+
+      // create
+      createTitle: s.cStep === 1 ? 'Define your pair' : 'Seed & deploy',
+      cStep: s.cStep, cStep1: s.cStep === 1, cStep2: s.cStep === 2,
+      fact: s.fact, recSym: sym, recName: s.recName, emoji: s.emoji,
+      onFact: this.onFact, onRecSym: this.onRecSym, onRecName: this.onRecName, onEmoji: this.onEmoji,
+      themes, tokens, toStep2: this.toStep2, toStep1: this.toStep1,
+      seed: s.seed, seedFmt: s.seed.toLocaleString(), onSeed: this.onSeed,
+      levMax: s.levMax, onLevMax: this.onLevMax, amms, launch: this.launch,
+
+      // provide
+      themeA: th.a, themeB: th.b, pairTitle, navRate, apr: s.aprNum.toFixed(1) + '%',
+      depTabFg: isDep ? '#07070b' : '#9494ad', depTabBg: isDep ? 'linear-gradient(100deg,#2fe6c0,#7ad9ff)' : 'transparent',
+      wdTabFg: !isDep ? '#07070b' : '#9494ad', wdTabBg: !isDep ? 'linear-gradient(100deg,#7ad9ff,#a06bff)' : 'transparent',
+      setDeposit: this.setDeposit, setWithdraw: this.setWithdraw,
+      payLabel: isDep ? 'you deposit' : 'you withdraw',
+      payBalance: isDep ? this.fmtN(s.usdcBal) + ' ' + quote : this.fmtN(s.mim) + ' ' + sym,
+      payAmount, payToken: isDep ? quote : sym, payTokenGlyph: isDep ? '$' : (s.emoji || '✦'), payTokenBg: isDep ? '#f2c14e' : `linear-gradient(120deg, ${th.a}, ${th.b})`,
+      payMax: isDep ? Math.floor(s.usdcBal) : 100, payStep: isDep ? 50 : 1, payValue: isDep ? s.depAmt : s.wdPct, onPay: this.onPay, payChips,
+      recvAmount, recvToken: isDep ? sym : quote, recvTokenGlyph: isDep ? (s.emoji || '✦') : '$', recvTokenBg: isDep ? `linear-gradient(120deg, ${th.a}, ${th.b})` : '#f2c14e',
+      rateLine: '1 ' + sym + ' = ' + navRate, shareLine: isDep ? 'fee 0.00%' : 'redeem to ' + quote,
+      ctaLabel: isDep ? 'Deposit ' + quote : 'Withdraw to ' + quote,
+      ctaBg: ctaOk ? 'linear-gradient(100deg,#2fe6c0,#a06bff)' : 'rgba(255,255,255,0.06)', ctaFg: ctaOk ? '#07070b' : '#54546a',
+      ctaCursor: ctaOk ? 'pointer' : 'not-allowed', ctaOpacity: ctaOk ? 1 : 0.7, confirmTx: this.confirmTx,
+      hasPos: s.mim > 1e-4, posValue: this.fmtUsd(value), mimBal: this.fmtN(s.mim), earned: (earned >= 0 ? '+' : '') + this.fmtUsd(earned), poolShare: poolShareN.toFixed(3) + '%',
+
+      // tabs + charts
+      quote,
+      pTabTrade: s.pTab === 'trade', pTabCharts: s.pTab === 'charts',
+      setTrade: this.setTrade, setCharts: this.setCharts,
+      tradeTabFg: s.pTab === 'trade' ? '#07070b' : '#9494ad', tradeTabBg: s.pTab === 'trade' ? 'linear-gradient(100deg,#2fe6c0,#7ad9ff)' : 'transparent',
+      chartTabFg: s.pTab === 'charts' ? '#07070b' : '#9494ad', chartTabBg: s.pTab === 'charts' ? 'linear-gradient(100deg,#7ad9ff,#a06bff)' : 'transparent',
+      apyTotal: apyT.toFixed(1) + '%', apyParts,
+      tf, tfChips, xStart: lbl(n - 1),
+      navNow: '$' + last.nav.toFixed(4), mintNow: '$' + last.mint.toFixed(4), redeemNow: '$' + last.redeem.toFixed(4),
+      navChg: (chgN >= 0 ? '+' : '') + chgN.toFixed(2) + '%', chgColor: chgN >= 0 ? '#2fe6c0' : '#ff5470',
+      spreadFill, mintLine: mintArr.join(' '), redeemLine: redeemArr.join(' '),
+      hoverOn, hoverPct, hovMint, hovRedeem, hovLabel, crossX, cyMint, cyRedeem,
+      onChartMove: this.onChartMove, onChartTouch: this.onChartTouch, onChartLeave: this.onChartLeave,
+      aArea, bArea, vaLine: vaArr.join(' '), navTopLine: navArr.join(' '), aFill: this.toRgba(th.a, 0.20), bFill: this.toRgba(th.b, 0.20),
+      vaNow: '$' + last.va.toFixed(3), vbNow: '$' + last.vb.toFixed(3),
+      contracts, contractsOpen: s.contractsOpen, contractsRot: s.contractsOpen ? '180deg' : '0deg', toggleContracts: this.toggleContracts,
+
+      // tx modal
+      txOpen: !!s.tx, txWorking: s.tx === 'working', txDone: s.tx === 'done',
+      txTitle: kind === 'launch' ? 'Deploying your pair…' : kind === 'withdraw' ? 'Withdrawing…' : 'Depositing…',
+      txStatus: s.txStatus, txPct: s.txPct.toFixed(0) + '%',
+      doneTitle: kind === 'launch' ? 'Your pair is live.' : kind === 'withdraw' ? 'Withdrawn.' : "You're an LP.",
+      doneSub: kind === 'launch' ? sym + ' + three AMMs deployed. metadata is now served from /api/meta.' : kind === 'withdraw' ? 'USDC is back in your wallet.' : 'you hold ' + sym + ' — a claim on the reserves, earning the arb.',
+      doneCta: kind === 'launch' ? 'Provide liquidity →' : 'Done',
+      finishTx: this.finishTx,
+    };
+  }
+}
+</script>
+</body>
+</html>

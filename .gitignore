@@ -1,0 +1,19 @@
+
+.claude/
+
+.anchor
+.DS_Store
+target
+**/*.rs.bk
+node_modules
+test-ledger
+.yarn
+
+# harness: large program dump (surfpool auto-clones from mainnet) + local rpc secret
+harness/artifacts/*.so
+.env.local
+
+# surfpool auto-generated project scaffolding
+.surfpool/
+runbooks/
+txtx.yml

@@ -1,0 +1,10 @@
+[package]
+name = "leverage-math"
+version = "0.1.0"
+edition = "2021"
+description = "Pure elastic mint-the-loser economics, shared by the Anchor and Pinocchio engines"
+
+[lib]
+name = "leverage_math"
+
+[dependencies]

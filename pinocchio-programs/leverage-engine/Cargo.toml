@@ -1,0 +1,18 @@
+[package]
+name = "leverage-engine-pinocchio"
+version = "0.1.0"
+edition = "2021"
+description = "Pinocchio port of the leverage engine (small binary for cheap mainnet deploy)"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "leverage_engine_pinocchio"
+
+[dependencies]
+pinocchio = { version = "0.11", features = ["cpi"] }
+pinocchio-token = "0.6"
+pinocchio-system = "0.6"
+leverage-math = { path = "../../crates/leverage-math" }
+
+[features]
+default = []

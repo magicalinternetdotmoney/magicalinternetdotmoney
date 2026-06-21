@@ -1,0 +1,134 @@
+:root {
+  color-scheme: dark;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: #0b0f14;
+  color: #e8eef5;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; min-height: 100vh; }
+
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+h1 { margin: 0 0 0.25rem; font-size: 1.4rem; }
+h2 { margin: 0 0 0.5rem; font-size: 0.95rem; color: #c5d4e3; }
+.sub { margin: 0; color: #7f93a8; font-size: 0.8rem; }
+.hint { margin: 0 0 0.75rem; color: #7f93a8; font-size: 0.75rem; }
+
+.card {
+  background: #121820;
+  border: 1px solid #243041;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.arb-card { border-color: #2a4a3a; }
+
+label {
+  display: block;
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.72rem;
+  color: #9fb3c8;
+}
+
+input {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #243041;
+  border-radius: 6px;
+  background: #0b0f14;
+  color: inherit;
+  font: inherit;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.wallet-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.wallet-btn, button {
+  padding: 0.5rem 0.85rem;
+  border: 1px solid #2d3f55;
+  border-radius: 6px;
+  background: #17202b;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+button.primary {
+  background: #1f6feb;
+  border-color: #1f6feb;
+}
+
+button.big {
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  font-size: 0.95rem;
+}
+
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.addr { font-size: 0.8rem; color: #9fb3c8; align-self: center; }
+.warn { font-size: 0.75rem; color: #c9a227; }
+
+.profit {
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  background: #0b0f14;
+  border: 1px solid #243041;
+  font-size: 0.9rem;
+  margin-top: 1.15rem;
+}
+
+.profit.good { color: #3dd68c; border-color: #2a5a40; }
+
+.quote-out {
+  margin: 0.75rem 0;
+  padding: 0.65rem;
+  border-radius: 6px;
+  background: #0b0f14;
+  border: 1px solid #243041;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  min-height: 2.5rem;
+}
+
+.badge {
+  font-size: 0.7rem;
+  color: #9fb3c8;
+  font-weight: normal;
+}
+
+pre.compact {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #9fb3c8;
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow: auto;
+}

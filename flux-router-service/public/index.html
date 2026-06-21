@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MIM Flux Router</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main>
+    <header class="top">
+      <div>
+        <h1>Flux Router</h1>
+        <p class="sub">Hook-aware FluxBeam swaps · all pools indexed</p>
+      </div>
+      <div id="walletBar" class="wallet-bar"></div>
+    </header>
+
+    <section class="card arb-card">
+      <h2>SOL → SOL Arb</h2>
+      <p class="hint">Round-trip SOL arb via non-hook Flux pools. Hook receipt pools (3xSOL/5xBTC) cannot swap on Flux yet.</p>
+      <div class="row">
+        <div>
+          <label>Amount (SOL)</label>
+          <input id="arbAmount" type="text" inputmode="decimal" value="0.1" />
+        </div>
+        <div class="arb-out">
+          <label>Est. profit</label>
+          <div id="arbProfit" class="profit">—</div>
+        </div>
+      </div>
+      <button id="arbBtn" type="button" class="primary big">Arb SOL</button>
+    </section>
+
+    <section class="card">
+      <h2>Swap</h2>
+      <div class="row">
+        <div>
+          <label>From</label>
+          <input id="inputMint" type="text" spellcheck="false" placeholder="mint" />
+        </div>
+        <div>
+          <label>To</label>
+          <input id="outputMint" type="text" spellcheck="false" placeholder="mint" />
+        </div>
+      </div>
+      <label>Amount in</label>
+      <input id="amountIn" type="text" inputmode="decimal" value="1" />
+      <div id="quoteOut" class="quote-out">—</div>
+      <button id="swapBtn" type="button" class="primary">Swap</button>
+    </section>
+
+    <section class="card">
+      <h2>Pools <span id="poolCount" class="badge">…</span></h2>
+      <pre id="pools" class="compact">indexing…</pre>
+    </section>
+  </main>
+  <script type="module" src="/app.js?v=7"></script>
+</body>
+</html>

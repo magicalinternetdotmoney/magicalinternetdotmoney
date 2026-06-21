@@ -1,0 +1,26 @@
+{
+  "_comment": "Mainnet fixtures for the surfpool fork. surfpool lazily clones any account the test touches from the datasource RPC, so these are reference addresses + the ones we must pass explicitly into CP-Swap CPIs.",
+  "cluster": "mainnet-beta",
+  "raydium_cp_swap": {
+    "program_id": "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",
+    "authority_pda": "GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL",
+    "authority_seed": "vault_and_lp_mint_auth_seed",
+    "amm_config": {
+      "0": "D4FPEruKEHrG5TenZ2mpDGEfu1iUvTiqBxvpU8HLBvC2",
+      "1": "G95xxie3XbkCqtE39GgQ9Ggc7xBC8Uceve7HFDEFApkc",
+      "2": "2fGXL8uhqxJ4tpgtosHZXT4zcQap6j62z3bMDxdkMvy5",
+      "3": "C7Cx2pMLtjybS3mDKSfsBj4zQ3PRZGkKt7RCYTTbCSx2"
+    },
+    "amm_config_seed": ["amm_config", "<index: u16 big-endian>"],
+    "create_pool_fee_receiver": "DNXgeM9EiiaAbaWvwjHj9fQQLAX5ZsfHyvmYUNRAdNC8",
+    "create_pool_fee_note": "Global program constant (SPL token account). Confirmed identical across sampled mainnet pools via getProgramAccounts(dataSize=637) + creation-tx trace.",
+    "pda_seeds": {
+      "pool_state": ["pool", "amm_config", "token_0_mint", "token_1_mint"],
+      "lp_mint": ["pool_lp_mint", "pool_state"],
+      "token_vault": ["pool_vault", "pool_state", "<mint>"],
+      "observation_state": ["observation", "pool_state"]
+    },
+    "notes": "token_0_mint < token_1_mint (byte order). observation_state is the on-chain TWAP oracle we read in M2. amount<128 amm_config[0] confirmed live (236-byte account owned by the program)."
+  },
+  "usdc_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+}

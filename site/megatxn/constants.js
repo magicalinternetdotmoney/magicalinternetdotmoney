@@ -1,0 +1,37 @@
+"use strict";
+
+const { PublicKey } = require("@solana/web3.js");
+
+const PROGRAM_ID = new PublicKey(
+  process.env.MEGATXN_PROGRAM_ID || "4zXB9f3AoB3x1onBCPYYLgwjF2vrw1bEXahffueaBuZX",
+);
+
+const SEED_PREFIX = Buffer.from("megatxn");
+const SEED_TRANSACTION = Buffer.from("transaction");
+const SEED_EPHEMERAL_SIGNER = Buffer.from("ephemeral_signer");
+const SEED_TRANSACTION_BUFFER = Buffer.from("txn_buffer");
+
+const MAX_BUFFER_SIZE = 10160;
+const MAX_EPHEMERAL_SIGNERS = 8;
+const BUFFER_CHUNK_SIZE = 700;
+
+const ACCOUNT_KEY_MEGA_TRANSACTION = 1;
+const ACCOUNT_KEY_TRANSACTION_BUFFER = 2;
+
+const TRANSACTION_BUFFER_HEADER_LEN = 70;
+const MEGA_TRANSACTION_HEADER_LEN = 34;
+
+module.exports = {
+  PROGRAM_ID,
+  SEED_PREFIX,
+  SEED_TRANSACTION,
+  SEED_EPHEMERAL_SIGNER,
+  SEED_TRANSACTION_BUFFER,
+  MAX_BUFFER_SIZE,
+  MAX_EPHEMERAL_SIGNERS,
+  BUFFER_CHUNK_SIZE,
+  ACCOUNT_KEY_MEGA_TRANSACTION,
+  ACCOUNT_KEY_TRANSACTION_BUFFER,
+  TRANSACTION_BUFFER_HEADER_LEN,
+  MEGA_TRANSACTION_HEADER_LEN,
+};
