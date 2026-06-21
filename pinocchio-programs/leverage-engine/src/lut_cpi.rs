@@ -11,8 +11,22 @@ use pinocchio::error::ProgramError;
 
 pub const ALT_PROGRAM_ID: Address = Address::from_str_const("AddressLookupTab1e1111111111111111111111111");
 
+/// Address Lookup Table metadata prefix — addresses start at this offset.
+pub const LUT_META_SIZE: usize = 56;
+
 /// Max addresses appended per `extend` call (keeps the instruction-data buffer on the stack).
 pub const MAX_EXTEND: usize = 12;
+
+/// Read the pubkey at `index` in a lookup table account (0-based).
+#[inline(always)]
+pub fn address_at(data: &[u8], index: usize) -> Result<Address, ProgramError> {
+    let off = LUT_META_SIZE.saturating_add(index.saturating_mul(32));
+    let bytes: [u8; 32] = data
+        .get(off..off + 32)
+        .and_then(|s| s.try_into().ok())
+        .ok_or(ProgramError::InvalidAccountData)?;
+    Ok(Address::from(bytes))
+}
 
 /// CPI `CreateLookupTable` (ix index 0): data = u32(0) | recent_slot(u64) | bump(u8).
 /// accounts: [lut(w), authority(signer), payer(w,signer), system].

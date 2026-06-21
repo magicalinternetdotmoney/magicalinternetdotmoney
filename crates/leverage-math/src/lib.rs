@@ -338,6 +338,30 @@ pub fn implied_market(
     })
 }
 
+/// Median of non-zero WAD samples. Returns `0` when every sample is zero.
+pub fn median_wad(samples: &[u128]) -> u128 {
+    let mut v: [u128; 32] = [0; 32];
+    let mut n = 0usize;
+    for &s in samples {
+        if s > 0 && n < v.len() {
+            v[n] = s;
+            n += 1;
+        }
+    }
+    if n == 0 {
+        return 0;
+    }
+    let slice = &mut v[..n];
+    slice.sort_unstable();
+    if n % 2 == 1 {
+        slice[n / 2]
+    } else {
+        let a = slice[n / 2 - 1];
+        let b = slice[n / 2];
+        (a / 2).saturating_add(b / 2).saturating_add((a % 2 + b % 2) / 2)
+    }
+}
+
 /// Advance `last` toward `now` by `absorb_bps / 10_000` of the gap (signed).
 /// Used after each crank so repeated transfers keep firing until caught up.
 pub fn partial_ratio_advance(last_wad: u128, now_wad: u128, absorb_bps: u64) -> u128 {
@@ -736,6 +760,13 @@ mod tests {
     #[test]
     fn implied_market_zero_reserve_is_none() {
         assert!(implied_market(0, 2_000, 1_000, 1_000, 1, 1).is_none());
+    }
+
+    #[test]
+    fn median_wad_odd_and_even() {
+        assert_eq!(median_wad(&[3 * WAD, 1 * WAD, 2 * WAD]), 2 * WAD);
+        assert_eq!(median_wad(&[4 * WAD, 2 * WAD]), 3 * WAD);
+        assert_eq!(median_wad(&[0, 0]), 0);
     }
 
     #[test]

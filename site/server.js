@@ -40,7 +40,9 @@ const CONFIG_MIN_SIZE = 400; // legacy pinocchio Config
 const CONFIG_SIZE = 432; // current (adds PumpSwap oracle fields past byte 400)
 // pinocchio Config field offsets (see pinocchio-programs/leverage-engine/src/config.rs)
 const O_USDC = 36, O_MINT_A = 68, O_MINT_B = 100, O_RECEIPT = 132;
-const O_POOL_AB = 164, O_POOL_AQ = 196, O_POOL_BQ = 228, O_FEE_BPS = 348;
+const O_POOL_AB = 164, O_POOL_AQ = 196, O_POOL_BQ = 228, O_LOOKUP_TABLE = 316, O_FEE_BPS = 348;
+const O_ORACLE_POOL = 382, O_ORACLE_KIND = 414;
+const ORACLE_CRAWL = 2;
 
 const METAPLEX = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
 const META_CACHE = new Map(); // mint -> {name,symbol,uri}|null
@@ -126,8 +128,15 @@ function parseConfigAccount(pubkey, dataB64) {
   const poolAb = rdPk(buf, O_POOL_AB), poolAq = rdPk(buf, O_POOL_AQ), poolBq = rdPk(buf, O_POOL_BQ);
   if (poolAb === ZERO || poolAq === ZERO || poolBq === ZERO) return null;
   const feeBps = buf.readUInt16LE(O_FEE_BPS) || 25;
+  const lookupTable = buf.length >= O_LOOKUP_TABLE + 32 ? rdPk(buf, O_LOOKUP_TABLE) : null;
+  const oracleKind = buf.length >= O_ORACLE_KIND + 1 ? buf[O_ORACLE_KIND] : 0;
+  const oraclePool = buf.length >= O_ORACLE_POOL + 32 ? rdPk(buf, O_ORACLE_POOL) : null;
+  const [priceCrawl] = txbuild.priceCrawlPda(PROGRAM_ID, pubkey);
   return {
     config: pubkey, receiptMint: receipt, quoteMint: usdc, mintA, mintB, quote: "USDC", tradeFeeBps: feeBps,
+    lookupTable: lookupTable === ZERO ? null : lookupTable,
+    oracleKind, oraclePool: oraclePool === ZERO ? null : oraclePool,
+    priceCrawl: priceCrawl.toBase58(),
     pools: {
       ab: { pool: poolAb, vaultA: cpVault(poolAb, mintA), vaultB: cpVault(poolAb, mintB) },
       aq: { pool: poolAq, vaultA: cpVault(poolAq, mintA), vaultQ: cpVault(poolAq, usdc) },
@@ -672,6 +681,13 @@ async function pairsPayload(opts) {
     const ap = apyFor(sk, p.sym);
     const um = resolveUnderlyingMint(p);
     const ui = um ? UNDERLYING_CACHE.get(um) : null;
+    let crawl = null;
+    if (p.priceCrawl) {
+      try {
+        const ai = await rpc("getAccountInfo", [p.priceCrawl, { encoding: "base64" }]);
+        if (ai && ai.value) crawl = txbuild.parsePriceCrawl(Buffer.from(ai.value.data[0], "base64"));
+      } catch (e) { /* crawl optional */ }
+    }
     out.push({
       name: p.name, sym: p.sym, theme: p.theme, quote: p.quote, tvl,
       apr: ap ? ap.total : null, nav: last ? last.nav : null,
@@ -679,6 +695,9 @@ async function pairsPayload(opts) {
       underlyingMint: um, underlyingSymbol: (ui && ui.symbol) || p.underlyingSymbol || null,
       logo: p.logo || (ui && ui.logo) || null,
       underlyingLogo: p.logo || (ui && ui.logo) || null,
+      oracleKind: p.oracleKind || 0,
+      priceCrawl: p.priceCrawl,
+      priceCrawlState: crawl,
     });
   }
   const q = (opts && opts.q) || "", sort = (opts && opts.sort) || "tvl", order = (opts && opts.order) || "desc";
@@ -889,6 +908,13 @@ const server = http.createServer(async (req, res) => {
       sampleTransactions: MAINNET_SAMPLE_TXS,
       rebalanceObservedOnMainnet: true,
       rebalancePath: "receipt_transfer_hook",
+      priceCrawl: {
+        enabled: true,
+        instructions: { init: 15, advance: 16, setEntry: 17 },
+        oracleKind: ORACLE_CRAWL,
+        maxEntries: 12,
+        layouts: { cpswap: 1, pumpswap: 2 },
+      },
       verify: {
         program: "https://solscan.io/account/" + PROGRAM_ID,
         programData: "https://solscan.io/account/" + programData,
@@ -951,6 +977,17 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return json(res, { error: "lookup failed", message: String(e.message || e) }, 502); }
   }
   // build an UNSIGNED deposit/withdraw tx for the connected wallet to sign+send.
+  if (p === "/api/tx/advance-crawl") {
+    await ensureRegistry();
+    const sym = q("sym", ""), owner = q("owner", ""), lookup = regPairOrAmbiguous(sym);
+    if (lookup.error) return json(res, lookup, lookup.error === "ambiguous sym" ? 409 : 404);
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(owner)) return json(res, { error: "bad owner" }, 400);
+    try {
+      return json(res, await txbuild.buildAdvanceCrawl(web3conn, {
+        programId: PROGRAM_ID, payer: owner, pair: lookup.pair, slot: q("slot", "") || undefined,
+      }));
+    } catch (e) { return json(res, { error: "build failed", message: String(e.message || e) }, 502); }
+  }
   if (p === "/api/tx/deposit" || p === "/api/tx/withdraw") {
     await ensureRegistry();
     const sym = q("sym", ""), owner = q("owner", ""), lookup = regPairOrAmbiguous(sym);

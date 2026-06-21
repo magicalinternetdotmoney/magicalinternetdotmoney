@@ -38,6 +38,8 @@ const O_ORACLE_PRICE_LAST: usize = 415; // u128 — last oracle price (WAD, quot
 
 pub const ORACLE_NONE: u8 = 0;
 pub const ORACLE_PUMPSWAP: u8 = 1;
+/// Multivendor median index (`price_crawl` PDA + root LUT phone book).
+pub const ORACLE_CRAWL: u8 = 2;
 
 #[inline(always)]
 fn rd_pubkey(d: &[u8], o: usize) -> Result<Address, ProgramError> {
@@ -106,7 +108,7 @@ impl<'a> Config<'a> {
             return ORACLE_NONE;
         }
         let k = self.0[O_ORACLE_KIND];
-        if k == ORACLE_PUMPSWAP && self.0.len() < O_ORACLE_PRICE_LAST + 16 {
+        if (k == ORACLE_PUMPSWAP || k == ORACLE_CRAWL) && self.0.len() < O_ORACLE_PRICE_LAST + 16 {
             return ORACLE_NONE;
         }
         k
@@ -120,6 +122,12 @@ impl<'a> Config<'a> {
     }
     pub fn uses_oracle(&self) -> bool {
         self.oracle_kind() != ORACLE_NONE
+    }
+    pub fn lookup_table(&self) -> Result<Address, ProgramError> {
+        if self.0.len() < O_LOOKUP_TABLE + 32 {
+            return Ok(Address::from([0u8; 32]));
+        }
+        rd_pubkey(self.0, O_LOOKUP_TABLE)
     }
 }
 

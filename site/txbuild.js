@@ -36,8 +36,12 @@ const CONFIG_MIN_SIZE = 400;
 const CONFIG_SIZE = 432;
 const O_USDC = 36, O_MINT_A = 68, O_MINT_B = 100, O_RECEIPT = 132;
 const O_POOL_AB = 164, O_POOL_AQ = 196, O_POOL_BQ = 228, O_L_MAX = 268;
-const O_ORACLE_POOL = 382, O_ORACLE_KIND = 414;
+const O_LOOKUP_TABLE = 316, O_ORACLE_POOL = 382, O_ORACLE_KIND = 414, O_ORACLE_PRICE_LAST = 415;
 const ORACLE_PUMPSWAP = 1;
+const ORACLE_CRAWL = 2;
+const PRICE_CRAWL_SIZE = 423;
+const LAYOUT_CPSWAP = 1;
+const LAYOUT_PUMPSWAP = 2;
 const PUMP_SWAP_PROGRAM = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
 const ZERO_PK = new PublicKey("11111111111111111111111111111111");
 
@@ -125,11 +129,57 @@ function parseConfigPubkey(pubkey, data) {
   const lmax = Number(data.readBigUInt64LE(O_L_MAX)) / 10000;
   const oracleKind = data.length >= O_ORACLE_KIND + 1 ? data[O_ORACLE_KIND] : 0;
   const oraclePool = data.length >= O_ORACLE_POOL + 32 ? rd(O_ORACLE_POOL) : null;
+  const lookupTable = data.length >= O_LOOKUP_TABLE + 32 ? rd(O_LOOKUP_TABLE) : null;
   return {
     receiptMint: rd(O_RECEIPT), config: pubkey.toBase58(), mintA: rd(O_MINT_A), mintB: rd(O_MINT_B),
-    quoteMint: rd(O_USDC), levMax: lmax, oracleKind, oraclePool,
+    quoteMint: rd(O_USDC), levMax: lmax, oracleKind, oraclePool, lookupTable,
     pools: { ab: { pool: rd(O_POOL_AB) }, aq: { pool: rd(O_POOL_AQ) }, bq: { pool: rd(O_POOL_BQ) } },
   };
+}
+
+function priceCrawlPda(programId, configPk) {
+  const PROGRAM = new PublicKey(programId);
+  const cfg = new PublicKey(configPk);
+  return PublicKey.findProgramAddressSync([Buffer.from("price_crawl"), cfg.toBuffer()], PROGRAM);
+}
+
+function parsePriceCrawl(buf) {
+  if (!buf || buf.length < PRICE_CRAWL_SIZE || buf[0] !== 1) return null;
+  const cursor = buf[33];
+  const pass = Number(buf.readBigUInt64LE(34));
+  const numEntries = buf[42];
+  const aggregateWad = buf.readBigUInt64LE(43) + (buf.readBigUInt64LE(51) << 64n);
+  const layouts = [];
+  for (let i = 0; i < 12; i++) layouts.push(buf[123 + i]);
+  return { cursor, pass, numEntries, aggregateWad: aggregateWad.toString(), layouts };
+}
+
+function cpswapVaultsFromPool(conn, poolPk, baseMint, quoteMint) {
+  return conn.getAccountInfo(poolPk, "confirmed").then((ai) => {
+    if (!ai || !ai.owner.equals(CP)) throw new Error("not CP-Swap pool: " + poolPk.toBase58());
+    const d = ai.data;
+    const v0 = rdPk(d, 8 + 64), v1 = rdPk(d, 8 + 96);
+    const t0 = rdPk(d, 8 + 160), t1 = rdPk(d, 8 + 192);
+    const base = new PublicKey(baseMint), quote = new PublicKey(quoteMint);
+    if (t0.equals(base) && t1.equals(quote)) return { pool: poolPk, baseVault: v0, quoteVault: v1, layout: LAYOUT_CPSWAP };
+    if (t1.equals(base) && t0.equals(quote)) return { pool: poolPk, baseVault: v1, quoteVault: v0, layout: LAYOUT_CPSWAP };
+    throw new Error("pool mints mismatch for " + poolPk.toBase58());
+  });
+}
+
+async function crawlVenueAt(conn, rootLut, cursor, baseMint, quoteMint) {
+  const lutAi = await conn.getAccountInfo(rootLut, "confirmed");
+  if (!lutAi) throw new Error("root LUT missing");
+  const off = 56 + cursor * 32;
+  const poolPk = rdPk(lutAi.data, off);
+  if (poolPk.equals(ZERO_PK)) throw new Error("empty LUT slot " + cursor);
+  const poolAi = await conn.getAccountInfo(poolPk, "confirmed");
+  if (!poolAi) throw new Error("pool missing at LUT[" + cursor + "]");
+  if (poolAi.owner.equals(PUMP_SWAP_PROGRAM)) {
+    const { baseVault, quoteVault } = pumpswapVaultsFromPoolData(poolAi.data);
+    return { pool: poolPk, baseVault, quoteVault, layout: LAYOUT_PUMPSWAP };
+  }
+  return cpswapVaultsFromPool(conn, poolPk, baseMint, quoteMint);
 }
 
 async function loadPairFromReceipt(conn, programId, receiptMint) {
@@ -210,7 +260,64 @@ async function buildHookEmbeds(conn, programId, pair) {
     const pool = rdPk(d, O_ORACLE_POOL);
     if (!pool.equals(ZERO_PK)) embeds.push(...await pumpswapOracleEmbeds(conn, pool.toBase58()));
   }
+  if (d && d.length >= CONFIG_SIZE && d[O_ORACLE_KIND] === ORACLE_CRAWL) {
+    const [crawl] = priceCrawlPda(programId, config.toBase58());
+    embeds.push(crawl);
+  }
   return embeds;
+}
+
+async function buildInitPriceCrawl(conn, { programId, admin, pair, numEntries, layouts, initAggregateWad }) {
+  const { PROGRAM, config } = pdas(programId, pair);
+  const owner = new PublicKey(admin);
+  const [crawl, crawlBump] = priceCrawlPda(programId, config.toBase58());
+  const rent = BigInt(await conn.getMinimumBalanceForRentExemption(PRICE_CRAWL_SIZE));
+  const layoutBuf = Buffer.alloc(12);
+  for (let i = 0; i < 12; i++) layoutBuf[i] = (layouts && layouts[i]) || 0;
+  const initWad = BigInt(initAggregateWad || 0);
+  const data = Buffer.concat([
+    Buffer.from([15, crawlBump, numEntries || 1]),
+    layoutBuf,
+    u128(initWad),
+    u64(rent),
+  ]);
+  const ixs = [
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
+    new TransactionInstruction({
+      programId: PROGRAM,
+      keys: [k(owner, true, true), k(config, false), k(crawl, true), k(SYS, false)],
+      data,
+    }),
+  ];
+  return { tx: await pack(conn, owner, ixs), priceCrawl: crawl.toBase58() };
+}
+
+async function buildAdvanceCrawl(conn, { programId, payer, pair, slot }) {
+  const { PROGRAM, config } = pdas(programId, pair);
+  const feePayer = new PublicKey(payer);
+  const cfgAi = await conn.getAccountInfo(config, "confirmed");
+  const d = cfgAi && cfgAi.data;
+  if (!d || d.length < CONFIG_SIZE) throw new Error("config missing");
+  const rootLut = rdPk(d, O_LOOKUP_TABLE);
+  if (rootLut.equals(ZERO_PK)) throw new Error("root LUT not set");
+  const [crawl] = priceCrawlPda(programId, config.toBase58());
+  const crawlAi = await conn.getAccountInfo(crawl, "confirmed");
+  const parsed = parsePriceCrawl(crawlAi && crawlAi.data);
+  if (!parsed || !parsed.numEntries) throw new Error("price_crawl not initialized");
+  const venue = await crawlVenueAt(conn, rootLut, parsed.cursor, pair.mintA, pair.quoteMint);
+  const recentSlot = slot != null ? BigInt(slot) : BigInt(await conn.getSlot("confirmed"));
+  const ixs = [
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 250_000 }),
+    new TransactionInstruction({
+      programId: PROGRAM,
+      keys: [
+        k(crawl, true), k(config, false), k(rootLut, false), k(venue.pool, false),
+        k(venue.baseVault, false), k(venue.quoteVault, false),
+      ],
+      data: Buffer.concat([Buffer.from([16]), u64(recentSlot)]),
+    }),
+  ];
+  return { tx: await pack(conn, feePayer, ixs), cursor: parsed.cursor, venue: venue.pool.toBase58(), layout: venue.layout };
 }
 
 async function findIncompletePairs(conn, programId) {
@@ -227,6 +334,13 @@ const sd = (s) => Buffer.from(s);
 const cpp = (seeds) => PublicKey.findProgramAddressSync(seeds, CP)[0];
 const k = (pubkey, isWritable, isSigner = false) => ({ pubkey, isSigner, isWritable });
 const u64 = (n) => { const b = Buffer.alloc(8); b.writeBigUInt64LE(BigInt(n)); return b; };
+const u128 = (n) => {
+  const b = Buffer.alloc(16);
+  const v = BigInt(n);
+  b.writeBigUInt64LE(v & ((1n << 64n) - 1n));
+  b.writeBigUInt64LE(v >> 64n, 8);
+  return b;
+};
 
 function pdas(programId, pair) {
   const PROGRAM = new PublicKey(programId);
@@ -616,6 +730,8 @@ async function buildInitHookMetas(conn, { programId, user, pair }) {
 
 module.exports = {
   buildDeposit, buildWithdraw, buildBackfillMetadata, buildPatchMetadata, buildInitHookMetas,
+  buildInitPriceCrawl, buildAdvanceCrawl, priceCrawlPda, parsePriceCrawl, crawlVenueAt,
   loadPairFromReceipt, listPairs, findIncompletePairs, hookMetaExists, hookVaults, buildHookEmbeds,
   mintHasMetadata, readMintMeta, canonicalPairMeta, pairLeverage,
+  ORACLE_CRAWL, LAYOUT_CPSWAP, LAYOUT_PUMPSWAP,
 };

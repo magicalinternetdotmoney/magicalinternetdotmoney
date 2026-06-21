@@ -11,8 +11,10 @@
 #![no_std]
 
 mod config;
+mod cpswap;
 mod cpswap_cpi;
 mod hook;
+mod price_crawl;
 mod pumpswap;
 mod lut_cpi;
 mod metadata_cpi;
@@ -21,8 +23,9 @@ mod token_cpi;
 mod validation;
 
 use config::{Config, InitParams};
-use leverage_math::{implied_market, partial_ratio_advance, plan_from_market, plan_two_pool_from_oracle_wad, Side, CRANK_ABSORB_BPS};
-use config::{ORACLE_PUMPSWAP, ORACLE_NONE};
+use leverage_math::{implied_market, median_wad, partial_ratio_advance, plan_from_market, plan_two_pool_from_oracle_wad, Side, CRANK_ABSORB_BPS};
+use config::{ORACLE_CRAWL, ORACLE_PUMPSWAP, ORACLE_NONE};
+use price_crawl::{InitCrawlParams, PriceCrawl, LAYOUT_CPSWAP, LAYOUT_PUMPSWAP, MAX_ENTRIES, PRICE_CRAWL_SEED, PRICE_CRAWL_SIZE};
 use pinocchio::{
     cpi::{Seed, Signer},
     entrypoint,
@@ -53,6 +56,9 @@ const TAG_BUY_BURN: u8 = 11;
 const TAG_SEED_PAIR: u8 = 12;
 const TAG_BACKFILL_METAPLEX: u8 = 13;
 const TAG_BACKFILL_RECEIPT_T22: u8 = 14;
+const TAG_INIT_PRICE_CRAWL: u8 = 15;
+const TAG_ADVANCE_CRAWL: u8 = 16;
+const TAG_SET_CRAWL_ENTRY: u8 = 17;
 
 const CONFIG_SEED: &[u8] = b"config";
 const AUTHORITY_SEED: &[u8] = b"authority";
@@ -101,6 +107,9 @@ pub fn process_instruction(program_id: &Address, accounts: &mut [AccountView], d
         TAG_SEED_PAIR => seed_pair(accounts, rest),
         TAG_BACKFILL_METAPLEX => backfill_metaplex(accounts, rest),
         TAG_BACKFILL_RECEIPT_T22 => backfill_receipt_t22(accounts, rest),
+        TAG_INIT_PRICE_CRAWL => init_price_crawl(program_id, accounts, rest),
+        TAG_ADVANCE_CRAWL => advance_crawl(accounts, rest),
+        TAG_SET_CRAWL_ENTRY => set_crawl_entry(accounts, rest),
         _ => Err(ProgramError::InvalidInstructionData),
     }
 }
@@ -572,6 +581,207 @@ fn backfill_receipt_t22(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult
     metadata_cpi::initialize_metadata(&accounts[3], &accounts[2], &accounts[2], name, symbol, uri, &signers)
 }
 
+/// Initialize the multivendor `price_crawl` PDA for a config pair.
+///
+/// accounts: 0 admin(signer,w) 1 config 2 price_crawl(w) 3 system
+/// data: crawl_bump(1) num_entries(1) layouts(MAX_ENTRIES) init_aggregate_wad(16) lamports(8)
+fn init_price_crawl(program_id: &Address, accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
+    if accounts.len() < 4 {
+        return Err(ProgramError::NotEnoughAccountKeys);
+    }
+    let crawl_bump = *d.first().ok_or(ProgramError::InvalidInstructionData)?;
+    let num_entries = *d.get(1).ok_or(ProgramError::InvalidInstructionData)?;
+    if num_entries == 0 || num_entries as usize > MAX_ENTRIES {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+    let mut layouts = [price_crawl::LAYOUT_NONE; MAX_ENTRIES];
+    for i in 0..MAX_ENTRIES {
+        layouts[i] = *d.get(2 + i).ok_or(ProgramError::InvalidInstructionData)?;
+    }
+    let init_agg = du128(d, 2 + MAX_ENTRIES)?;
+    let lamports = du64(d, 2 + MAX_ENTRIES + 16)?;
+
+    let admin_key = *accounts[0].address();
+    if !accounts[0].is_signer() {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+    let cfg_key = *accounts[1].address();
+    let (base_mint, quote_mint, init_oracle) = {
+        let data = accounts[1].try_borrow()?;
+        let c = Config::load(&data)?;
+        if admin_key != c.admin()? {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+        (
+            c.mint_a()?,
+            c.usdc_mint()?,
+            if init_agg == 0 { c.oracle_price_last_wad()? } else { init_agg },
+        )
+    };
+    let bump_s = [crawl_bump];
+    let seeds = [
+        Seed::from(PRICE_CRAWL_SEED),
+        Seed::from(cfg_key.as_array().as_ref()),
+        Seed::from(&bump_s),
+    ];
+    CreateAccount {
+        from: &accounts[0],
+        to: &accounts[2],
+        lamports,
+        space: PRICE_CRAWL_SIZE as u64,
+        owner: program_id,
+    }
+    .invoke_signed(&[Signer::from(&seeds)])?;
+
+    let params = InitCrawlParams {
+        config: cfg_key,
+        base_mint,
+        quote_mint,
+        num_entries,
+        layouts,
+        init_aggregate_wad: init_oracle,
+    };
+    let mut data = accounts[2].try_borrow_mut()?;
+    price_crawl::write_init(&mut data, &params)
+}
+
+/// Admin: set the layout tag for one crawl slot (after extending the root LUT).
+///
+/// accounts: 0 admin(signer) 1 config 2 price_crawl(w)
+/// data: index(1) layout(1)
+fn set_crawl_entry(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
+    if accounts.len() < 3 {
+        return Err(ProgramError::NotEnoughAccountKeys);
+    }
+    let index = *d.first().ok_or(ProgramError::InvalidInstructionData)?;
+    let layout = *d.get(1).ok_or(ProgramError::InvalidInstructionData)?;
+    if layout != LAYOUT_CPSWAP && layout != LAYOUT_PUMPSWAP {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+    let admin_key = *accounts[0].address();
+    if !accounts[0].is_signer() {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+    let cfg_key = *accounts[1].address();
+    {
+        let cfg = accounts[1].try_borrow()?;
+        let c = Config::load(&cfg)?;
+        if admin_key != c.admin()? {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+    }
+    let mut crawl = accounts[2].try_borrow_mut()?;
+    let pc = PriceCrawl::load(&crawl)?;
+    if pc.config()? != cfg_key {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    price_crawl::set_entry_layout(&mut crawl, index, layout)
+}
+
+/// Permissionless crank: read one venue, store sample, advance cursor, median on wrap.
+///
+/// accounts: 0 price_crawl(w) 1 config 2 root_lut 3 pool 4 base_vault 5 quote_vault
+/// data: slot(8)
+fn advance_crawl(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
+    if accounts.len() < 6 {
+        return Err(ProgramError::NotEnoughAccountKeys);
+    }
+    let slot = du64(d, 0)?;
+
+    let (cfg_key, root_lut_key, base_mint, quote_mint) = {
+        let cfg = accounts[1].try_borrow()?;
+        let c = Config::load(&cfg)?;
+        (
+            *accounts[1].address(),
+            c.lookup_table()?,
+            c.mint_a()?,
+            c.usdc_mint()?,
+        )
+    };
+    if root_lut_key == Address::from([0u8; 32]) || accounts[2].address() != &root_lut_key {
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    let (cursor, num, layout) = {
+        let crawl = accounts[0].try_borrow()?;
+        let pc = PriceCrawl::load(&crawl)?;
+        if pc.config()? != cfg_key {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        let n = pc.num_entries();
+        if n == 0 {
+            return Ok(());
+        }
+        (pc.cursor(), n, pc.entry_layout(pc.cursor() as usize))
+    };
+
+    if layout != LAYOUT_CPSWAP && layout != LAYOUT_PUMPSWAP {
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    // Root LUT phone book: entry `cursor` must match the pool passed in (or child LUT).
+    {
+        let lut = accounts[2].try_borrow()?;
+        if lut_cpi::address_at(&lut, cursor as usize)? != *accounts[3].address() {
+            return Err(ProgramError::InvalidAccountData);
+        }
+    }
+
+    let pool_key = *accounts[3].address();
+    let base_res = token_amount(&accounts[4])?;
+    let quote_res = token_amount(&accounts[5])?;
+    if base_res < price_crawl::MIN_BASE_RESERVE {
+        return Ok(());
+    }
+
+    let price_wad = match layout {
+        LAYOUT_PUMPSWAP => {
+            let (bv, qv) = pumpswap::validate_pool(&accounts[3], &pool_key)?;
+            if accounts[4].address() != &bv || accounts[5].address() != &qv {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            pumpswap::price_wad(base_res, quote_res).ok_or(ProgramError::InvalidAccountData)?
+        }
+        LAYOUT_CPSWAP => {
+            let pool_data = accounts[3].try_borrow()?;
+            if accounts[3].owner() != &cpswap::CP_SWAP_ID {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            let (v0, v1) = cpswap::pool_vaults(&pool_data)?;
+            let (t0, t1) = cpswap::pool_mints(&pool_data)?;
+            let (base_vault, quote_vault) = if &t0 == &base_mint && &t1 == &quote_mint {
+                (v0, v1)
+            } else if &t1 == &base_mint && &t0 == &quote_mint {
+                (v1, v0)
+            } else {
+                return Err(ProgramError::InvalidAccountData);
+            };
+            if accounts[4].address() != &base_vault || accounts[5].address() != &quote_vault {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            cpswap::price_wad(base_res, quote_res).ok_or(ProgramError::InvalidAccountData)?
+        }
+        _ => return Err(ProgramError::InvalidAccountData),
+    };
+
+    let mut samples = [0u128; MAX_ENTRIES];
+    {
+        let crawl = accounts[0].try_borrow()?;
+        let pc = PriceCrawl::load(&crawl)?;
+        for i in 0..num as usize {
+            samples[i] = if i == cursor as usize {
+                price_wad
+            } else {
+                pc.sample_price(i)?
+            };
+        }
+    }
+    let new_agg = median_wad(&samples[..num as usize]);
+
+    let mut crawl = accounts[0].try_borrow_mut()?;
+    price_crawl::store_sample_and_advance(&mut crawl, price_wad, slot, new_agg)
+}
+
 /// Oracle-free rebalance. Reads last_ratio + params from Config, all 6 vaults +
 /// 2 mint supplies on-chain, mints the loser into both its pools, writes the new
 /// ratio back to Config.
@@ -592,6 +802,8 @@ fn rebalance(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
 ///   8 vault_busdc_b(w) 9 vault_busdc_usdc 10 token_program
 /// When config.oracle_kind == pumpswap, also pass:
 ///   11 oracle_pool 12 oracle_base_vault 13 oracle_quote_vault
+/// When config.oracle_kind == crawl, also pass:
+///   11 price_crawl (read-only aggregate)
 /// `user_leverage_bps == 0` ⇒ use the config's l_max (full leverage, elastic-capped).
 fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u64) -> ProgramResult {
     if accounts.len() < base + 10 {
@@ -602,7 +814,11 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
         let c = Config::load(&data)?;
         let kind = c.oracle_kind();
         let pool = if kind == ORACLE_PUMPSWAP { c.oracle_pool()? } else { Address::from([0u8; 32]) };
-        let last = if kind == ORACLE_PUMPSWAP { c.oracle_price_last_wad()? } else { 0 };
+        let last = if kind == ORACLE_PUMPSWAP || kind == ORACLE_CRAWL {
+            c.oracle_price_last_wad()?
+        } else {
+            0
+        };
         (
             c.last_ratio_wad()?,
             c.l_min_bps()?,
@@ -635,7 +851,18 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
         None => return Ok(()),
     };
 
-    let oracle_now_wad = if oracle_kind == ORACLE_PUMPSWAP {
+    let oracle_now_wad = if oracle_kind == ORACLE_CRAWL {
+        if accounts.len() < base + 11 {
+            return Ok(());
+        }
+        let crawl_data = accounts[base + 10].try_borrow()?;
+        let crawl = PriceCrawl::load(&crawl_data)?;
+        let agg = crawl.aggregate_wad()?;
+        if agg == 0 {
+            return Ok(());
+        }
+        agg
+    } else if oracle_kind == ORACLE_PUMPSWAP {
         if oracle_pool == Address::from([0u8; 32]) || accounts.len() < base + 13 {
             return Ok(());
         }
@@ -653,7 +880,7 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
         0
     };
 
-    let plan = if oracle_kind == ORACLE_PUMPSWAP {
+    let plan = if oracle_kind == ORACLE_PUMPSWAP || oracle_kind == ORACLE_CRAWL {
         match plan_two_pool_from_oracle_wad(
             oracle_last, oracle_now_wad, res_ab_a, res_ab_b, res_ausdc_a, res_busdc_b, supply_a, supply_b,
             leverage, l_min, l_max, max_mint, breaker,
@@ -661,10 +888,12 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
             Some(p) => p,
             None => {
                 let mut data = accounts[base].try_borrow_mut()?;
-                config::set_oracle_price_last(
-                    &mut data,
-                    partial_ratio_advance(oracle_last, oracle_now_wad, CRANK_ABSORB_BPS),
-                );
+                if oracle_kind == ORACLE_PUMPSWAP || oracle_kind == ORACLE_CRAWL {
+                    config::set_oracle_price_last(
+                        &mut data,
+                        partial_ratio_advance(oracle_last, oracle_now_wad, CRANK_ABSORB_BPS),
+                    );
+                }
                 config::set_last_ratio(
                     &mut data,
                     partial_ratio_advance(last_ratio, market.ratio_wad, CRANK_ABSORB_BPS),
@@ -707,7 +936,7 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
 
     // Partial basis advance — repeated transfers keep cranking until caught up.
     let mut data = accounts[base].try_borrow_mut()?;
-    if oracle_kind == ORACLE_PUMPSWAP {
+    if oracle_kind == ORACLE_PUMPSWAP || oracle_kind == ORACLE_CRAWL {
         config::set_oracle_price_last(
             &mut data,
             partial_ratio_advance(oracle_last, oracle_now_wad, CRANK_ABSORB_BPS),
@@ -735,7 +964,11 @@ fn hook_execute(accounts: &mut [AccountView]) -> ProgramResult {
     let need = {
         let data = accounts[5].try_borrow()?;
         let c = Config::load(&data)?;
-        if c.oracle_kind() == ORACLE_PUMPSWAP { 13 } else { 10 }
+        match c.oracle_kind() {
+            ORACLE_PUMPSWAP => 13,
+            ORACLE_CRAWL => 11,
+            _ => 10,
+        }
     };
     if accounts.len() < 5 + need {
         return Ok(());
