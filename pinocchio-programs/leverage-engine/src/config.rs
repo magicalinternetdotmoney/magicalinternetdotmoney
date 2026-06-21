@@ -3,8 +3,10 @@
 
 use pinocchio::{error::ProgramError, Address};
 
-/// Total account size (with headroom for future fields).
-pub const CONFIG_SIZE: usize = 400;
+/// Legacy config size (all mainnet configs deployed before the PumpSwap oracle).
+pub const CONFIG_MIN_SIZE: usize = 400;
+/// Current config size — new inits allocate this; oracle fields live past byte 400.
+pub const CONFIG_SIZE: usize = 432;
 /// Marks an initialized config (byte 0).
 pub const TAG_INITIALIZED: u8 = 1;
 
@@ -30,6 +32,12 @@ const O_TOTAL_RECEIPT: usize = 308; // u64
 const O_LOOKUP_TABLE: usize = 316; // [u8;32] — persistent PDA-authority LUT
 const O_FEE_BPS: usize = 348; // u16 — deposit fee skimmed to the fee vault
 const O_BUYBURN_POOL: usize = 350; // [u8;32] — the canonical MEME/quote pool for buy_burn
+const O_ORACLE_POOL: usize = 382; // [u8;32] — external price oracle pool (PumpSwap)
+const O_ORACLE_KIND: usize = 414; // u8 — 0=triangle-only, 1=pumpswap
+const O_ORACLE_PRICE_LAST: usize = 415; // u128 — last oracle price (WAD, quote per base)
+
+pub const ORACLE_NONE: u8 = 0;
+pub const ORACLE_PUMPSWAP: u8 = 1;
 
 #[inline(always)]
 fn rd_pubkey(d: &[u8], o: usize) -> Result<Address, ProgramError> {
@@ -61,7 +69,7 @@ pub struct Config<'a>(pub &'a [u8]);
 
 impl<'a> Config<'a> {
     pub fn load(d: &'a [u8]) -> Result<Self, ProgramError> {
-        if d.len() < CONFIG_SIZE || d[O_TAG] != TAG_INITIALIZED {
+        if d.len() < CONFIG_MIN_SIZE || d[O_TAG] != TAG_INITIALIZED {
             return Err(ProgramError::UninitializedAccount);
         }
         Ok(Config(d))
@@ -87,6 +95,32 @@ impl<'a> Config<'a> {
         u16::from_le_bytes([self.0[O_FEE_BPS], self.0[O_FEE_BPS + 1]])
     }
     pub fn buyburn_pool(&self) -> Result<Address, ProgramError> { rd_pubkey(self.0, O_BUYBURN_POOL) }
+    pub fn oracle_pool(&self) -> Result<Address, ProgramError> {
+        if self.0.len() < O_ORACLE_POOL + 32 {
+            return Ok(Address::from([0u8; 32]));
+        }
+        rd_pubkey(self.0, O_ORACLE_POOL)
+    }
+    pub fn oracle_kind(&self) -> u8 {
+        if self.0.len() <= O_ORACLE_KIND {
+            return ORACLE_NONE;
+        }
+        let k = self.0[O_ORACLE_KIND];
+        if k == ORACLE_PUMPSWAP && self.0.len() < O_ORACLE_PRICE_LAST + 16 {
+            return ORACLE_NONE;
+        }
+        k
+    }
+    pub fn oracle_price_last_wad(&self) -> Result<u128, ProgramError> {
+        if self.0.len() > O_ORACLE_PRICE_LAST + 15 {
+            rd_u128(self.0, O_ORACLE_PRICE_LAST)
+        } else {
+            Ok(0)
+        }
+    }
+    pub fn uses_oracle(&self) -> bool {
+        self.oracle_kind() != ORACLE_NONE
+    }
 }
 
 /// Parameters for `init_config`, parsed from instruction data (in declared order).
@@ -108,6 +142,9 @@ pub struct InitParams {
     pub init_ratio_wad: u128,
     pub fee_bps: u16,
     pub buyburn_pool: Address,
+    pub oracle_pool: Address,
+    pub oracle_kind: u8,
+    pub init_oracle_price_wad: u128,
 }
 
 /// Write a fresh, initialized Config into `d` (length must be `CONFIG_SIZE`).
@@ -135,6 +172,11 @@ pub fn write_init(d: &mut [u8], p: &InitParams) -> Result<(), ProgramError> {
     wr(d, O_TOTAL_RECEIPT, &0u64.to_le_bytes());
     wr(d, O_FEE_BPS, &p.fee_bps.to_le_bytes());
     wr(d, O_BUYBURN_POOL, p.buyburn_pool.as_array());
+    if d.len() >= O_ORACLE_PRICE_LAST + 16 {
+        wr(d, O_ORACLE_POOL, p.oracle_pool.as_array());
+        d[O_ORACLE_KIND] = p.oracle_kind;
+        wr(d, O_ORACLE_PRICE_LAST, &p.init_oracle_price_wad.to_le_bytes());
+    }
     Ok(())
 }
 
@@ -155,4 +197,9 @@ pub fn set_pools(d: &mut [u8], pool_ab: &Address, pool_a_usdc: &Address, pool_b_
 }
 pub fn set_lookup_table(d: &mut [u8], lut: &Address) {
     wr(d, O_LOOKUP_TABLE, lut.as_array());
+}
+pub fn set_oracle_price_last(d: &mut [u8], price_wad: u128) {
+    if d.len() > O_ORACLE_PRICE_LAST + 15 {
+        wr(d, O_ORACLE_PRICE_LAST, &price_wad.to_le_bytes());
+    }
 }

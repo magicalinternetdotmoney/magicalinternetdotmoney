@@ -32,9 +32,14 @@ const metaPda = (mint) => PublicKey.findProgramAddressSync(
   [Buffer.from("metadata"), METAPLEX.toBuffer(), mint.toBuffer()], METAPLEX,
 )[0];
 
-const CONFIG_SIZE = 400;
+const CONFIG_MIN_SIZE = 400;
+const CONFIG_SIZE = 432;
 const O_USDC = 36, O_MINT_A = 68, O_MINT_B = 100, O_RECEIPT = 132;
 const O_POOL_AB = 164, O_POOL_AQ = 196, O_POOL_BQ = 228, O_L_MAX = 268;
+const O_ORACLE_POOL = 382, O_ORACLE_KIND = 414;
+const ORACLE_PUMPSWAP = 1;
+const PUMP_SWAP_PROGRAM = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
+const ZERO_PK = new PublicKey("11111111111111111111111111111111");
 
 function readBorshStr(buf, off) {
   if (off + 4 > buf.length) return ["", off];
@@ -115,12 +120,14 @@ async function mintHasMetadata(conn, mint, t22 = false) {
 function rdPk(buf, o) { return new PublicKey(buf.subarray(o, o + 32)); }
 
 function parseConfigPubkey(pubkey, data) {
-  if (!data || data.length < CONFIG_SIZE || data[0] !== 1) return null;
+  if (!data || data.length < CONFIG_MIN_SIZE || data[0] !== 1) return null;
   const rd = (o) => rdPk(data, o).toBase58();
   const lmax = Number(data.readBigUInt64LE(O_L_MAX)) / 10000;
+  const oracleKind = data.length >= O_ORACLE_KIND + 1 ? data[O_ORACLE_KIND] : 0;
+  const oraclePool = data.length >= O_ORACLE_POOL + 32 ? rd(O_ORACLE_POOL) : null;
   return {
     receiptMint: rd(O_RECEIPT), config: pubkey.toBase58(), mintA: rd(O_MINT_A), mintB: rd(O_MINT_B),
-    quoteMint: rd(O_USDC), levMax: lmax,
+    quoteMint: rd(O_USDC), levMax: lmax, oracleKind, oraclePool,
     pools: { ab: { pool: rd(O_POOL_AB) }, aq: { pool: rd(O_POOL_AQ) }, bq: { pool: rd(O_POOL_BQ) } },
   };
 }
@@ -136,8 +143,11 @@ async function loadPairFromReceipt(conn, programId, receiptMint) {
   const bareAi = await conn.getAccountInfo(bare);
   const grand = parseConfigPubkey(bare, bareAi && bareAi.data);
   if (grand && grand.receiptMint === receiptMint) return grand;
-  const accs = await conn.getProgramAccounts(PROGRAM, { filters: [{ dataSize: CONFIG_SIZE }] });
-  for (const { pubkey, account } of accs) {
+  const [accs400, accs432] = await Promise.all([
+    conn.getProgramAccounts(PROGRAM, { filters: [{ dataSize: CONFIG_MIN_SIZE }] }),
+    conn.getProgramAccounts(PROGRAM, { filters: [{ dataSize: CONFIG_SIZE }] }),
+  ]);
+  for (const { pubkey, account } of (accs400 || []).concat(accs432 || [])) {
     const p = parseConfigPubkey(pubkey, account.data);
     if (p && p.receiptMint === receiptMint) return p;
   }
@@ -146,8 +156,12 @@ async function loadPairFromReceipt(conn, programId, receiptMint) {
 
 async function listPairs(conn, programId) {
   const PROGRAM = new PublicKey(programId);
-  const accs = await conn.getProgramAccounts(PROGRAM, { filters: [{ dataSize: CONFIG_SIZE }] });
+  const [accs400, accs432] = await Promise.all([
+    conn.getProgramAccounts(PROGRAM, { filters: [{ dataSize: CONFIG_MIN_SIZE }] }),
+    conn.getProgramAccounts(PROGRAM, { filters: [{ dataSize: CONFIG_SIZE }] }),
+  ]);
   const seen = new Set(), out = [];
+  const accs = (accs400 || []).concat(accs432 || []);
   for (const { pubkey, account } of accs) {
     const p = parseConfigPubkey(pubkey, account.data);
     if (!p || seen.has(p.receiptMint)) continue;
@@ -158,9 +172,55 @@ async function listPairs(conn, programId) {
 }
 
 const CP = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
-// writable: config, mint_a, mint_b, vAbA, vAbB, vAuA, vBuB (bits 0,2,3,4,5,6,8)
-const HOOK_WRITABLE_MASK = 0b00101111101;
-const HOOK_EMBED_COUNT = 11;
+
+function hookWritableMask(count) {
+  let mask = 0;
+  for (let hi = 0; hi < count; hi++) {
+    if (hi === 0 || hi === 2 || hi === 3 || (hi >= 4 && hi <= 9)) mask |= (1 << hi);
+  }
+  return mask;
+}
+
+function pumpswapVaultsFromPoolData(buf) {
+  if (!buf || buf.length < 203) throw new Error("pumpswap pool data too short");
+  return { baseVault: rdPk(buf, 139), quoteVault: rdPk(buf, 171) };
+}
+
+async function pumpswapOracleEmbeds(conn, oraclePoolB58) {
+  const pool = new PublicKey(oraclePoolB58);
+  const ai = await conn.getAccountInfo(pool, "confirmed");
+  if (!ai || !ai.owner.equals(PUMP_SWAP_PROGRAM)) {
+    throw new Error("oracle pool missing or not PumpSwap: " + oraclePoolB58);
+  }
+  const { baseVault, quoteVault } = pumpswapVaultsFromPoolData(ai.data);
+  return [pool, baseVault, quoteVault];
+}
+
+async function buildHookEmbeds(conn, programId, pair) {
+  const { config, authority } = pdas(programId, pair);
+  const v = hookVaults(pair);
+  const embeds = [
+    config, authority, new PublicKey(pair.mintA), new PublicKey(pair.mintB),
+    v.vAbA, v.vAbB, v.vAuA, v.vAuU, v.vBuB, v.vBuU,
+    TOKEN_PROGRAM_ID,
+  ];
+  const cfgAi = await conn.getAccountInfo(config, "confirmed");
+  const d = cfgAi && cfgAi.data;
+  if (d && d.length >= CONFIG_SIZE && d[O_ORACLE_KIND] === ORACLE_PUMPSWAP) {
+    const pool = rdPk(d, O_ORACLE_POOL);
+    if (!pool.equals(ZERO_PK)) embeds.push(...await pumpswapOracleEmbeds(conn, pool.toBase58()));
+  }
+  return embeds;
+}
+
+async function findIncompletePairs(conn, programId) {
+  const pairs = await listPairs(conn, programId);
+  const out = [];
+  for (const p of pairs) {
+    if (!(await hookMetaExists(conn, programId, p.receiptMint))) out.push(p);
+  }
+  return out;
+}
 const MEMO = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 const SYS = web3.SystemProgram.programId;
 const sd = (s) => Buffer.from(s);
@@ -529,14 +589,11 @@ async function buildInitHookMetas(conn, { programId, user, pair }) {
   if (await hookMetaExists(conn, programId, pair.receiptMint)) {
     return { tx: null, metaList: metaList.toBase58(), skipped: true };
   }
-  const v = hookVaults(pair);
-  const embeds = [
-    config, authority, mintA, mintB,
-    v.vAbA, v.vAbB, v.vAuA, v.vAuU, v.vBuB, v.vBuU,
-    TOKEN_PROGRAM_ID,
-  ];
-  if (embeds.length !== HOOK_EMBED_COUNT) throw new Error("unexpected hook embed count");
-  const metaRent = BigInt(await conn.getMinimumBalanceForRentExemption(16 + HOOK_EMBED_COUNT * 35));
+  const embeds = await buildHookEmbeds(conn, programId, pair);
+  const hookCount = embeds.length;
+  if (hookCount < 11 || hookCount > 16) throw new Error("unexpected hook embed count: " + hookCount);
+  const hookMask = hookWritableMask(hookCount);
+  const metaRent = BigInt(await conn.getMinimumBalanceForRentExemption(16 + hookCount * 35));
   const ixs = [
     ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
     new TransactionInstruction({
@@ -548,8 +605,8 @@ async function buildInitHookMetas(conn, { programId, user, pair }) {
       data: Buffer.concat([
         Buffer.from([7]),
         u64(metaRent),
-        Buffer.from([HOOK_EMBED_COUNT]),
-        Buffer.from([HOOK_WRITABLE_MASK & 0xff, (HOOK_WRITABLE_MASK >> 8) & 0xff]),
+        Buffer.from([hookCount]),
+        Buffer.from([hookMask & 0xff, (hookMask >> 8) & 0xff]),
         Buffer.from([metaBump]),
       ]),
     }),
@@ -559,6 +616,6 @@ async function buildInitHookMetas(conn, { programId, user, pair }) {
 
 module.exports = {
   buildDeposit, buildWithdraw, buildBackfillMetadata, buildPatchMetadata, buildInitHookMetas,
-  loadPairFromReceipt, listPairs, hookMetaExists, hookVaults,
+  loadPairFromReceipt, listPairs, findIncompletePairs, hookMetaExists, hookVaults, buildHookEmbeds,
   mintHasMetadata, readMintMeta, canonicalPairMeta, pairLeverage,
 };

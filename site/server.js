@@ -25,6 +25,8 @@ const PUBLIC = path.join(__dirname, "public");
 const RPC_URL = process.env.RPC_URL || "https://api.mainnet-beta.solana.com";
 const PROGRAM_ID = process.env.PROGRAM_ID || "J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe";
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const WSOL_MINT = "So11111111111111111111111111111111111111112";
+const PUMP_SWAP_PROGRAM = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA";
 const MEME_MINT = "CNBuoZWcqAvVZJCrPFF1XQXeeXJsZKj7SUKZoE6Vpump";
 const MEME_POOL_CACHE = new Map(); // legMint|MEME -> pool id|null
 const DATA_DIR = process.env.DATA_DIR || "";           // set to a fly volume to persist series
@@ -34,7 +36,8 @@ const web3conn = new web3.Connection(RPC_URL, "confirmed"); // for the deposit/w
 const { PublicKey } = web3;
 const CP = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
 const ZERO = "11111111111111111111111111111111";
-const CONFIG_SIZE = 400; // pinocchio Config account
+const CONFIG_MIN_SIZE = 400; // legacy pinocchio Config
+const CONFIG_SIZE = 432; // current (adds PumpSwap oracle fields past byte 400)
 // pinocchio Config field offsets (see pinocchio-programs/leverage-engine/src/config.rs)
 const O_USDC = 36, O_MINT_A = 68, O_MINT_B = 100, O_RECEIPT = 132;
 const O_POOL_AB = 164, O_POOL_AQ = 196, O_POOL_BQ = 228, O_FEE_BPS = 348;
@@ -118,7 +121,7 @@ function cpVault(poolB58, mintB58) {
 function rdPk(buf, o) { return new PublicKey(buf.subarray(o, o + 32)).toBase58(); }
 function parseConfigAccount(pubkey, dataB64) {
   const buf = Buffer.from(dataB64, "base64");
-  if (buf.length < CONFIG_SIZE || buf[0] !== 1) return null;
+  if (buf.length < CONFIG_MIN_SIZE || buf[0] !== 1) return null;
   const usdc = rdPk(buf, O_USDC), mintA = rdPk(buf, O_MINT_A), mintB = rdPk(buf, O_MINT_B), receipt = rdPk(buf, O_RECEIPT);
   const poolAb = rdPk(buf, O_POOL_AB), poolAq = rdPk(buf, O_POOL_AQ), poolBq = rdPk(buf, O_POOL_BQ);
   if (poolAb === ZERO || poolAq === ZERO || poolBq === ZERO) return null;
@@ -257,10 +260,11 @@ async function refreshRegistryFromGpa() {
   GPA_BUSY = true;
   try {
     META_CACHE.clear();
-    const rows = await rpc("getProgramAccounts", [PROGRAM_ID, {
-      encoding: "base64",
-      filters: [{ dataSize: CONFIG_SIZE }],
-    }]);
+    const [rows400, rows432] = await Promise.all([
+      rpc("getProgramAccounts", [PROGRAM_ID, { encoding: "base64", filters: [{ dataSize: CONFIG_MIN_SIZE }] }]),
+      rpc("getProgramAccounts", [PROGRAM_ID, { encoding: "base64", filters: [{ dataSize: CONFIG_SIZE }] }]),
+    ]);
+    const rows = (rows400 || []).concat(rows432 || []);
     const seen = new Set(), raw = [];
     for (const row of rows || []) {
       const parsed = parseConfigAccount(row.pubkey, row.account.data[0]);
@@ -308,6 +312,113 @@ function rpc(method, params) {
     req.end();
   });
 }
+function poolLiquidityUsd(p) {
+  return (p && p.liquidity && p.liquidity.usd) || 0;
+}
+
+async function lookupRaydiumUsdcAnchor(mint) {
+  try {
+    const pools = await httpsGetJson(
+      "api-v3.raydium.io",
+      "/pools/info/mint?mint1=" + mint + "&mint2=" + USDC_MINT + "&poolType=all&poolSortField=liquidity&sortType=desc&pageSize=5&page=1",
+    );
+    const ps = ((pools.data || {}).data) || [];
+    const best = ps.find((x) => x && x.price) || null;
+    if (!best) return null;
+    const usdcIsB = best.mintB && best.mintB.address === USDC_MINT;
+    const priceUsd = usdcIsB ? best.price : best.price ? 1 / best.price : null;
+    if (!priceUsd) return null;
+    return {
+      priceUsd,
+      pool: { id: best.id, type: best.type, tvl: best.tvl, quoteMint: USDC_MINT, quoteSymbol: "USDC" },
+      source: "raydium",
+    };
+  } catch (e) { return null; }
+}
+
+function pumpswapVaultsFromPoolData(buf) {
+  if (!buf || buf.length < 203) return null;
+  const b58 = (o) => new PublicKey(buf.subarray(o, o + 32)).toBase58();
+  return { baseVault: b58(139), quoteVault: b58(171) };
+}
+
+async function pumpswapVaults(poolId) {
+  try {
+    const r = await rpc("getAccountInfo", [poolId, { encoding: "base64" }]);
+    if (!r || !r.value || !r.value.data) return null;
+    const buf = Buffer.from(r.value.data[0], "base64");
+    if (r.value.owner !== PUMP_SWAP_PROGRAM) return null;
+    return pumpswapVaultsFromPoolData(buf);
+  } catch (e) { return null; }
+}
+
+async function lookupPumpswapAnchor(mint) {
+  try {
+    const data = await httpsGetJson("api.dexscreener.com", "/latest/dex/tokens/" + mint);
+    const pools = (data.pairs || []).filter(
+      (p) => p && p.chainId === "solana" && p.dexId === "pumpswap" && p.priceUsd && p.quoteToken && p.quoteToken.address,
+    );
+    if (!pools.length) return null;
+    const tier = (q) => pools.filter((p) => p.quoteToken.address === q);
+    const candidates = tier(USDC_MINT).length ? tier(USDC_MINT) : tier(WSOL_MINT);
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => poolLiquidityUsd(b) - poolLiquidityUsd(a));
+    const best = candidates[0];
+    const priceUsd = parseFloat(best.priceUsd);
+    if (!priceUsd || !isFinite(priceUsd)) return null;
+    const vaults = await pumpswapVaults(best.pairAddress);
+    return {
+      priceUsd,
+      pool: {
+        id: best.pairAddress,
+        type: "pumpswap",
+        program: PUMP_SWAP_PROGRAM,
+        tvl: poolLiquidityUsd(best),
+        quoteMint: best.quoteToken.address,
+        quoteSymbol: best.quoteToken.symbol || null,
+        baseVault: vaults && vaults.baseVault,
+        quoteVault: vaults && vaults.quoteVault,
+      },
+      source: "pumpswap",
+    };
+  } catch (e) { return null; }
+}
+
+async function resolvePriceAnchor(mint) {
+  const ray = await lookupRaydiumUsdcAnchor(mint);
+  if (ray) return ray;
+  return lookupPumpswapAnchor(mint);
+}
+
+async function resolveTokenMeta(mint) {
+  let out = null;
+  try {
+    const info = await httpsGetJson("api-v3.raydium.io", "/mint/ids?mints=" + mint);
+    const tok = (info.data || [])[0];
+    if (tok) out = { mint, symbol: tok.symbol, name: tok.name, decimals: tok.decimals, logo: tok.logoURI || null, program: tok.programId || null };
+  } catch (e) { /* fall through */ }
+  if (!out || !out.logo) {
+    const j = await jupiterTokenByMint(mint);
+    if (j) out = Object.assign({ mint, symbol: null, name: null, decimals: null, logo: null, program: null }, out, j);
+  }
+  if (!out || !out.symbol) {
+    try {
+      const data = await httpsGetJson("api.dexscreener.com", "/latest/dex/tokens/" + mint);
+      const hit = ((data.pairs || []).filter((p) => p && p.chainId === "solana")
+        .sort((a, b) => poolLiquidityUsd(b) - poolLiquidityUsd(a)))[0];
+      const tok = hit && (hit.baseToken.address === mint ? hit.baseToken : hit.quoteToken);
+      if (tok) {
+        out = Object.assign({ mint, symbol: null, name: null, decimals: null, logo: null, program: null }, out, {
+          symbol: tok.symbol || out && out.symbol,
+          name: tok.name || out && out.name,
+          logo: (hit.info && hit.info.imageUrl) || (out && out.logo) || null,
+        });
+      }
+    } catch (e) { /* no dexscreener hit */ }
+  }
+  return out;
+}
+
 // plain HTTPS GET → JSON (used for the Raydium public API; zero-dep)
 function httpsGetJson(host, pathQ) {
   return new Promise((resolve, reject) => {
@@ -467,16 +578,25 @@ function pairScore(p) {
   const pts = s ? s.length : 0;
   return tvl * 1e6 + pts;
 }
-function dedupePairsList(rows) {
-  const best = new Map();
+function receiptShort(mint) {
+  if (!mint || mint.length < 12) return mint || "";
+  return mint.slice(0, 4) + "…" + mint.slice(-4);
+}
+// One row per on-chain config — disambiguate duplicate syms for display, never hide a pair.
+function annotatePairLabels(rows) {
+  const symCount = new Map();
   for (const r of rows) {
-    const k = (r.sym || r.receiptMint || "").toLowerCase();
-    const prev = best.get(k);
-    if (!prev) { best.set(k, r); continue; }
-    const score = (r) => ((r.tvl != null ? r.tvl : -1) * 1e6) + (r.nav != null ? 1 : 0);
-    if (score(r) > score(prev)) best.set(k, r);
+    const k = (r.sym || "").toLowerCase();
+    if (k) symCount.set(k, (symCount.get(k) || 0) + 1);
   }
-  return [...best.values()];
+  return rows.map((r) => {
+    const collide = symCount.get((r.sym || "").toLowerCase()) > 1;
+    const short = receiptShort(r.receiptMint);
+    return Object.assign({}, r, {
+      symCollides: collide,
+      symDisplay: collide && r.sym ? r.sym + " · " + short : r.sym,
+    });
+  });
 }
 
 // ---- payloads (GPA + on-chain metadata; never invented) ----
@@ -487,7 +607,21 @@ function regPair(key) {
   const bySym = REGISTRY.filter((p) => p.sym === key);
   if (!bySym.length) return null;
   if (bySym.length === 1) return bySym[0];
-  return bySym.slice().sort((a, b) => pairScore(b) - pairScore(a))[0];
+  return null; // ambiguous sym — caller must pass receiptMint
+}
+function regPairOrAmbiguous(key) {
+  const p = regPair(key);
+  if (p) return { pair: p };
+  if (!key) return { error: "unknown pair" };
+  const bySym = REGISTRY.filter((x) => x.sym === key);
+  if (bySym.length > 1) {
+    return {
+      error: "ambiguous sym",
+      message: "multiple pairs share this symbol — pass receipt mint",
+      matches: bySym.map((x) => ({ sym: x.sym, symDisplay: x.sym + " · " + receiptShort(x.receiptMint), receiptMint: x.receiptMint, config: x.config })),
+    };
+  }
+  return { error: "unknown pair" };
 }
 function regPairLookup(sym, mint) {
   if (mint) { const p = regPair(mint); if (p) return p; }
@@ -510,8 +644,10 @@ function filterPairs(rows, q) {
   const s = q.toLowerCase();
   return rows.filter((p) =>
     (p.sym && p.sym.toLowerCase().includes(s)) ||
+    (p.symDisplay && p.symDisplay.toLowerCase().includes(s)) ||
     (p.name && p.name.toLowerCase().includes(s)) ||
-    (p.receiptMint && p.receiptMint.toLowerCase().includes(s))
+    (p.receiptMint && p.receiptMint.toLowerCase().includes(s)) ||
+    (p.config && p.config.toLowerCase().includes(s))
   );
 }
 function sortPairs(rows, sort, order) {
@@ -539,14 +675,14 @@ async function pairsPayload(opts) {
     out.push({
       name: p.name, sym: p.sym, theme: p.theme, quote: p.quote, tvl,
       apr: ap ? ap.total : null, nav: last ? last.nav : null,
-      receiptMint: p.receiptMint, mintA: p.mintA, mintB: p.mintB,
+      config: p.config, receiptMint: p.receiptMint, mintA: p.mintA, mintB: p.mintB,
       underlyingMint: um, underlyingSymbol: (ui && ui.symbol) || p.underlyingSymbol || null,
       logo: p.logo || (ui && ui.logo) || null,
       underlyingLogo: p.logo || (ui && ui.logo) || null,
     });
   }
   const q = (opts && opts.q) || "", sort = (opts && opts.sort) || "tvl", order = (opts && opts.order) || "desc";
-  return sortPairs(filterPairs(dedupePairsList(out), q), sort, order);
+  return sortPairs(filterPairs(annotatePairLabels(out), q), sort, order);
 }
 async function findMemePool(legMint) {
   const key = legMint + "|" + MEME_MINT;
@@ -657,8 +793,49 @@ function json(res, obj, code = 200) {
 }
 
 let programDeployed = false;
+let programMeta = { executable: false, programData: null, upgradeAuthority: null };
+// Verified mainnet samples — scan program + Raydium LP mint history on mainnet.
+// Solscan: https://solscan.io/tx/<sig>
+const MAINNET_SAMPLE_TXS = {
+  deposit3xSOL: "3j1nCrnG15M9ZvnDWaVQMLRtnyhqhizSG1xkLnW4ShkqhqZQebLUttwEsgDhR3rUC4fmb7iJPa4jpBYWCiQQCq5X",
+  deposit5xBTC: "4df5jUNBeEoBU4fMHcJktjWx4BE7LF1qnMXsQC8MoLRhKj6SGxQUVMVc1GX38NiLQuJLMJWJbJTREjeZpebGwUSs",
+  depositLEV: "3mDnbYNMhVko2evpnfm2Cu8SvcqfGEGKtUeZcQ3R1Zod5jE9DGCyeWMT1xm1RGGmWd9jgAPth9C8ZeA5yL4ZNUiG",
+  withdraw: "jXfNVqUNBSY9e5XZ6v3PKDr7qujGcfsFmU7Xd2kjPXCVmRXtamLtYa6adPccrKYT41LwBEwqRLUj8KtCkciK6kM",
+  initConfig: "N5RhLJYiZKHew3GRc3SgzgTQXsSer1BacEX7Tz68iMGEVMbzMJ9o4G7Wiegx8JLoFM7zVHhUmScGsrV885pAFm6",
+  registerTriangle: "4VR9HkYA73Y7hckoriVYkpffrCagAe92s2qBSRKayrJAiMt5BBvUAxTExRjzWaSyuoNXEVBav2JH4CTBJHLquXZF",
+  initHook: "5J8kViDMZKJkJ79Y4uwnj2tMiih5WbiTy3r6AmV59Lqx3t5Q63q85H24tzk7ZfDR7F1Lv2gKhyUUAynAnKKDmUnr",
+  backfillMetaplex: "2pX8NSLA1knyhJKE6Na6y3x37YNxLM6sG6AD8LF65qeTK3wtNoTstT86jwD1mt34WPbdsCiLgfGA6JJ2Mj9rQLdD",
+  backfillReceipt: "3669NsGKkd21fw4MjZSChcU3WumVYigpvRd4kTJopU7dSY6HLVNzzVQYgCuKi2U5zDvqBfYciEDsciDgPEu4t1r2",
+  updateMetadata: "2q5V3DVx2d6pXuUCwJfGK6uKreZbjwv9w2YuPeigJNmf3BspC8osRipYyWZMFHSF1ZNBhKAaCbV7JTDjYq9kXqo3",
+  transferHookExecute: "48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y",
+  raydiumLpMintActivity: "3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4",
+};
+const MAINNET_PROGRAM_DATA = "F1QCWDHFBMr1BsL7CTdetpxTbQXkzwDkQVUmy3EvknE5";
+const MAINNET_UPGRADE_AUTHORITY = "CnkHq3wRSsegjpJJvvRWb1uiCJvPMAYW6b7P1Yq8FpCT";
+const MAINNET_RAYDIUM_LP_3XSOL_AB = {
+  pool: "6LBJej9kh2Kzgun39dvpZzrrH73XRqw7YKXS2wjR4ku5",
+  lpMint: "9Wa74CiHe12aMQyBFitjuWhRwktGZ6hoicucUhxPX2b2",
+};
 async function refreshStatus() {
-  try { const r = await rpc("getAccountInfo", [PROGRAM_ID, { encoding: "base64" }]); programDeployed = !!(r && r.value); }
+  try {
+    const r = await rpc("getAccountInfo", [PROGRAM_ID, { encoding: "base64" }]);
+    programDeployed = !!(r && r.value);
+    if (r && r.value) {
+      const buf = Buffer.from(r.value.data[0], "base64");
+      programMeta.executable = !!r.value.executable;
+      if (buf.length >= 36) {
+        const pd = new PublicKey(buf.subarray(4, 36)).toBase58();
+        programMeta.programData = pd;
+        try {
+          const pdAi = await rpc("getAccountInfo", [pd, { encoding: "base64" }]);
+          if (pdAi && pdAi.value && pdAi.value.data) {
+            const pdb = Buffer.from(pdAi.value.data[0], "base64");
+            if (pdb.length >= 45) programMeta.upgradeAuthority = new PublicKey(pdb.subarray(13, 45)).toBase58();
+          }
+        } catch (e) { /* optional */ }
+      }
+    }
+  }
   catch (e) { /* leave as-is on transient rpc error */ }
 }
 
@@ -686,9 +863,45 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // honest chain status — the frontend gates real actions on this
-  if (p === "/api/status")
-    return json(res, { programId: PROGRAM_ID, deployed: programDeployed, rpc: RPC_URL.replace(/\?.*/, ""), usdcMint: USDC_MINT, pairs: REGISTRY.length });
+  // honest chain status — public, no wallet. frontend gates actions on `deployed`.
+  if (p === "/api/status") {
+    const rows = await pairsPayload({});
+    const withReceipts = rows.filter((r) => r.nav != null).length;
+    const upgradeAuthority = programMeta.upgradeAuthority || MAINNET_UPGRADE_AUTHORITY;
+    const programData = programMeta.programData || MAINNET_PROGRAM_DATA;
+    return json(res, {
+      programId: PROGRAM_ID,
+      deployed: programDeployed,
+      programExecutable: programMeta.executable,
+      programData,
+      upgradeAuthority,
+      rpc: RPC_URL.replace(/\?.*/, ""),
+      usdcMint: USDC_MINT,
+      pairs: REGISTRY.length,
+      pairsWithReceiptSupply: withReceipts,
+      maturity: "mainnet-alpha",
+      audited: false,
+      publicReadApis: ["/healthz", "/api/status", "/api/pairs", "/api/charts"],
+      walletRequiredFor: ["/api/balance", "deposit", "withdraw", "launch"],
+      raydiumLpExample: MAINNET_RAYDIUM_LP_3XSOL_AB,
+      sampleTransactions: MAINNET_SAMPLE_TXS,
+      rebalanceObservedOnMainnet: false,
+      verify: {
+        program: "https://solscan.io/account/" + PROGRAM_ID,
+        programData: "https://solscan.io/account/" + programData,
+        upgradeAuthority: "https://solscan.io/account/" + upgradeAuthority,
+        txUrlPrefix: "https://solscan.io/tx/",
+      },
+      notes: [
+        "Pinocchio mainnet: deposit/withdraw CPI into Raydium CP-Swap pool vaults (see sample txs + LP mint activity).",
+        "Permissionless rebalance (tag 0) not observed in mainnet program history as of 2026-06-21 — covered on surfpool fork.",
+        "Launch is ~10 wallet-approved txs, not a single click.",
+        "site/_handoff/ is a pre-build Claude design mockup, not production proof.",
+        "Public read APIs work without a wallet: /api/status, /api/pairs, /api/charts.",
+        "Duplicate receipt symbols are listed separately (symDisplay adds receipt suffix); pass receiptMint for deposit/withdraw when sym collides.",
+      ],
+    });
+  }
   // real wallet balances (SOL + USDC) via server-side RPC — keeps any RPC key off the client
   if (p === "/api/balance") {
     const owner = q("owner", "");
@@ -703,37 +916,42 @@ const server = http.createServer(async (req, res) => {
       return json(res, { owner, sol: (sol.value || 0) / 1e9, usdc });
     } catch (e) { return json(res, { error: "rpc", message: String(e.message || e) }, 502); }
   }
-  // /api/underlying?ca=<mint> — resolve a pasted token + its Raydium pool vs USDC.
-  // This is the TWAP anchor for a leg: the leg tracks this token's USDC price.
+  // /api/underlying?ca=<mint> — auto-resolve price anchor: Raydium USDC first, else PumpSwap.
   if (p === "/api/underlying") {
     const ca = q("ca", "");
     if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(ca)) return json(res, { error: "bad mint" }, 400);
     // USDC itself is the quote — a constant $1 anchor (no pool lookup; USDC/USDC has none).
-    if (ca === USDC_MINT)
-      return json(res, { mint: ca, symbol: "USDC", name: "USD Coin", decimals: 6, priceUsd: 1, pool: null, hasUsdcPool: true, isQuote: true });
+    if (ca === USDC_MINT) {
+      return json(res, {
+        mint: ca, symbol: "USDC", name: "USD Coin", decimals: 6, priceUsd: 1, pool: null,
+        hasUsdcPool: true, hasPriceAnchor: true, priceSource: "quote", isQuote: true,
+      });
+    }
     try {
-      const [info, pools] = await Promise.all([
-        httpsGetJson("api-v3.raydium.io", "/mint/ids?mints=" + ca),
-        httpsGetJson("api-v3.raydium.io", "/pools/info/mint?mint1=" + ca + "&mint2=" + USDC_MINT + "&poolType=all&poolSortField=liquidity&sortType=desc&pageSize=5&page=1"),
-      ]);
-      const tok = (info.data || [])[0];
-      if (!tok) return json(res, { error: "unknown token", ca }, 404);
-      const ps = ((pools.data || {}).data) || [];
-      const best = ps.find((x) => x && x.price) || null;
-      let priceUsd = null, pool = null;
-      if (best) {
-        const usdcIsB = best.mintB && best.mintB.address === USDC_MINT;
-        priceUsd = usdcIsB ? best.price : best.price ? 1 / best.price : null;
-        pool = { id: best.id, type: best.type, tvl: best.tvl };
-      }
-      return json(res, { mint: ca, symbol: tok.symbol, name: tok.name, decimals: tok.decimals, logo: tok.logoURI, program: tok.programId, priceUsd, pool, hasUsdcPool: !!best });
+      const [tok, anchor] = await Promise.all([resolveTokenMeta(ca), resolvePriceAnchor(ca)]);
+      if (!tok || !tok.symbol) return json(res, { error: "unknown token", ca }, 404);
+      const hasAnchor = !!(anchor && anchor.priceUsd);
+      return json(res, {
+        mint: ca,
+        symbol: tok.symbol,
+        name: tok.name,
+        decimals: tok.decimals,
+        logo: tok.logo,
+        program: tok.program,
+        priceUsd: anchor ? anchor.priceUsd : null,
+        pool: anchor ? anchor.pool : null,
+        priceSource: anchor ? anchor.source : null,
+        hasUsdcPool: hasAnchor,
+        hasPriceAnchor: hasAnchor,
+      });
     } catch (e) { return json(res, { error: "lookup failed", message: String(e.message || e) }, 502); }
   }
   // build an UNSIGNED deposit/withdraw tx for the connected wallet to sign+send.
   if (p === "/api/tx/deposit" || p === "/api/tx/withdraw") {
     await ensureRegistry();
-    const sym = q("sym", ""), owner = q("owner", ""), pair = regPair(sym);
-    if (!pair) return json(res, { error: "unknown pair" }, 404);
+    const sym = q("sym", ""), owner = q("owner", ""), lookup = regPairOrAmbiguous(sym);
+    if (lookup.error) return json(res, lookup, lookup.error === "ambiguous sym" ? 409 : 404);
+    const pair = lookup.pair;
     if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(owner)) return json(res, { error: "bad owner" }, 400);
     try {
       if (p.endsWith("deposit")) {
@@ -750,8 +968,9 @@ const server = http.createServer(async (req, res) => {
   // FluxBeam pool: LUT txs + LP/pool pre-signed pool vtx; wallet signs as payer.
   if (p === "/api/tx/fluxbeam-pool") {
     await ensureRegistry();
-    const sym = q("sym", ""), owner = q("owner", ""), pair = regPair(sym);
-    if (!pair) return json(res, { error: "unknown pair" }, 404);
+    const sym = q("sym", ""), owner = q("owner", ""), lookup = regPairOrAmbiguous(sym);
+    if (lookup.error) return json(res, lookup, lookup.error === "ambiguous sym" ? 409 : 404);
+    const pair = lookup.pair;
     if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(owner)) return json(res, { error: "bad owner" }, 400);
     const quoteMint = q("quoteMint", "");
     if (quoteMint !== fluxbeam.WSOL && quoteMint !== fluxbeam.USDC) {
@@ -804,22 +1023,28 @@ const server = http.createServer(async (req, res) => {
   if (p === "/api/charts") {
     await ensureRegistry();
     const key = q("receipt", "") || q("sym", "");
-    const pair = regPair(key);
-    if (!pair) return json(res, { error: "unknown pair", points: [] }, 404);
+    const lookup = regPairOrAmbiguous(key);
+    if (lookup.error) return json(res, Object.assign({ points: [] }, lookup), lookup.error === "ambiguous sym" ? 409 : 404);
+    const pair = lookup.pair;
     return json(res, { sym: pair.sym, receiptMint: pair.receiptMint, tf: q("tf", "1D"), points: seriesFor(seriesKey(pair), q("tf", "1D")) });
   }
   if (p === "/api/apy") {
     await ensureRegistry();
     const key = q("receipt", "") || q("sym", "");
-    const pair = regPair(key);
-    if (!pair) return json(res, { error: "unknown pair" }, 404);
+    const lookup = regPairOrAmbiguous(key);
+    if (lookup.error) return json(res, lookup, lookup.error === "ambiguous sym" ? 409 : 404);
+    const pair = lookup.pair;
     const sk = seriesKey(pair);
     const a = apyFor(sk, pair.sym);
     return a ? json(res, a) : json(res, { sym: pair.sym, receiptMint: pair.receiptMint, quoteEquiv: "USD", total: null, note: apyNote(sk), navSamples: navSamples(sk).length });
   }
   if (p === "/api/contracts") {
     await ensureRegistry();
-    const c = await contractsPayload(regPair(q("sym", ""))); return c ? json(res, { contracts: c }) : json(res, { error: "unknown pair" }, 404);
+    const key = q("receipt", "") || q("sym", "");
+    const lookup = regPairOrAmbiguous(key);
+    if (lookup.error) return json(res, lookup, lookup.error === "ambiguous sym" ? 409 : 404);
+    const c = await contractsPayload(lookup.pair);
+    return c ? json(res, { contracts: c }) : json(res, { error: "unknown pair" }, 404);
   }
   if (p === "/api/meta") {
     const mintOnly = q("mint", "");

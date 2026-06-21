@@ -7,6 +7,112 @@ Live site: [magicalinternet.money](https://magicalinternet.money)
 > **Experimental · unaudited · here be dragons.**  
 > Rebalance mints the loser into **both** the pair vault and the loser/USDC vault in lockstep — the naive cross-venue arb (buy cheap in A/B, dump into USDC) does not apply. LPs earn from **Raydium swap fees + external arb volume** as synths trade on Jupiter; that is the economic loop, not a formal guarantee against sustained one-sided moves. Do not deposit funds you cannot afford to lose.
 
+### Honest project status
+
+| | |
+|---|---|
+| **Maturity** | Early-stage research software — small number of live pairs, no audit, no formal verification |
+| **Mainnet program** | Pinocchio `J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe` — deposit/withdraw/rebalance use **real Raydium CP-Swap pool vaults** (not protocol-held reserves) |
+| **Rebalance price signal** | Oracle-free: implied MINTA/MINTB ratio from on-chain vault balances + supplies. **Raydium `observation_state` TWAP is not used** |
+| **Optional oracle** | PumpSwap vault read for MEME / non-Raydium underlyings (pairs can still run triangle-only) |
+| **Anchor crate** | `programs/leverage-engine` is a **stale M1 reference** (protocol-held reserves) — kept for IDL/surfpool; not what ships on mainnet |
+| **Site** | [magicalinternet.money](https://magicalinternet.money) indexes real on-chain state; launching a pair is **~10 wallet txs**, not one click |
+| **Design mockup** | `site/_handoff/` is a pre-build Claude design comp — not production proof |
+
+### On-chain verification (with receipts)
+
+No wallet needed to sanity-check the deployment:
+
+```bash
+curl -s https://magicalinternet.money/api/status | jq .
+curl -s https://magicalinternet.money/api/pairs | jq '.pairs | length'
+```
+
+**Live `/api/status`** (snapshot 2026-06-21 — no wallet; RPC host only, key server-side):
+
+```json
+{
+  "programId": "J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe",
+  "deployed": true,
+  "programExecutable": true,
+  "programData": "F1QCWDHFBMr1BsL7CTdetpxTbQXkzwDkQVUmy3EvknE5",
+  "upgradeAuthority": "CnkHq3wRSsegjpJJvvRWb1uiCJvPMAYW6b7P1Yq8FpCT",
+  "rpc": "https://mainnet.helius-rpc.com/",
+  "usdcMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  "pairs": 5,
+  "pairsWithReceiptSupply": 2,
+  "maturity": "mainnet-alpha",
+  "audited": false,
+  "publicReadApis": ["/healthz", "/api/status", "/api/pairs", "/api/charts"],
+  "walletRequiredFor": ["/api/balance", "deposit", "withdraw", "launch"],
+  "raydiumLpExample": {
+    "pool": "6LBJej9kh2Kzgun39dvpZzrrH73XRqw7YKXS2wjR4ku5",
+    "lpMint": "9Wa74CiHe12aMQyBFitjuWhRwktGZ6hoicucUhxPX2b2"
+  },
+  "sampleTransactions": {
+    "deposit3xSOL": "3j1nCrnG15M9ZvnDWaVQMLRtnyhqhizSG1xkLnW4ShkqhqZQebLUttwEsgDhR3rUC4fmb7iJPa4jpBYWCiQQCq5X",
+    "deposit5xBTC": "4df5jUNBeEoBU4fMHcJktjWx4BE7LF1qnMXsQC8MoLRhKj6SGxQUVMVc1GX38NiLQuJLMJWJbJTREjeZpebGwUSs",
+    "depositLEV": "3mDnbYNMhVko2evpnfm2Cu8SvcqfGEGKtUeZcQ3R1Zod5jE9DGCyeWMT1xm1RGGmWd9jgAPth9C8ZeA5yL4ZNUiG",
+    "withdraw": "jXfNVqUNBSY9e5XZ6v3PKDr7qujGcfsFmU7Xd2kjPXCVmRXtamLtYa6adPccrKYT41LwBEwqRLUj8KtCkciK6kM",
+    "initConfig": "N5RhLJYiZKHew3GRc3SgzgTQXsSer1BacEX7Tz68iMGEVMbzMJ9o4G7Wiegx8JLoFM7zVHhUmScGsrV885pAFm6",
+    "registerTriangle": "4VR9HkYA73Y7hckoriVYkpffrCagAe92s2qBSRKayrJAiMt5BBvUAxTExRjzWaSyuoNXEVBav2JH4CTBJHLquXZF",
+    "initHook": "5J8kViDMZKJkJ79Y4uwnj2tMiih5WbiTy3r6AmV59Lqx3t5Q63q85H24tzk7ZfDR7F1Lv2gKhyUUAynAnKKDmUnr",
+    "backfillMetaplex": "2pX8NSLA1knyhJKE6Na6y3x37YNxLM6sG6AD8LF65qeTK3wtNoTstT86jwD1mt34WPbdsCiLgfGA6JJ2Mj9rQLdD",
+    "backfillReceipt": "3669NsGKkd21fw4MjZSChcU3WumVYigpvRd4kTJopU7dSY6HLVNzzVQYgCuKi2U5zDvqBfYciEDsciDgPEu4t1r2",
+    "updateMetadata": "2q5V3DVx2d6pXuUCwJfGK6uKreZbjwv9w2YuPeigJNmf3BspC8osRipYyWZMFHSF1ZNBhKAaCbV7JTDjYq9kXqo3",
+    "transferHookExecute": "48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y",
+    "raydiumLpMintActivity": "3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4"
+  },
+  "rebalanceObservedOnMainnet": false,
+  "verify": {
+    "program": "https://solscan.io/account/J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe",
+    "programData": "https://solscan.io/account/F1QCWDHFBMr1BsL7CTdetpxTbQXkzwDkQVUmy3EvknE5",
+    "upgradeAuthority": "https://solscan.io/account/CnkHq3wRSsegjpJJvvRWb1uiCJvPMAYW6b7P1Yq8FpCT",
+    "txUrlPrefix": "https://solscan.io/tx/"
+  },
+  "notes": [
+    "Pinocchio mainnet: deposit/withdraw CPI into Raydium CP-Swap pool vaults (see sample txs + LP mint activity).",
+    "Permissionless rebalance (tag 0) not observed in mainnet program history as of 2026-06-21 — covered on surfpool fork.",
+    "Launch is ~10 wallet-approved txs, not a single click.",
+    "site/_handoff/ is a pre-build Claude design mockup, not production proof.",
+    "Public read APIs work without a wallet: /api/status, /api/pairs, /api/charts."
+  ]
+}
+```
+
+Solscan links for any sample tx: `verify.txUrlPrefix` + signature (e.g. [`…/tx/3j1nCrnG…`](https://solscan.io/tx/3j1nCrnG15M9ZvnDWaVQMLRtnyhqhizSG1xkLnW4ShkqhqZQebLUttwEsgDhR3rUC4fmb7iJPa4jpBYWCiQQCq5X)).
+
+| Field | Value |
+|-------|-------|
+| Program | [`J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe`](https://solscan.io/account/J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe) (upgradeable loader, executable) |
+| Program data | [`F1QCWDHFBMr1BsL7CTdetpxTbQXkzwDkQVUmy3EvknE5`](https://solscan.io/account/F1QCWDHFBMr1BsL7CTdetpxTbQXkzwDkQVUmy3EvknE5) |
+| Upgrade authority | [`CnkHq3wRSsegjpJJvvRWb1uiCJvPMAYW6b7P1Yq8FpCT`](https://solscan.io/account/CnkHq3wRSsegjpJJvvRWb1uiCJvPMAYW6b7P1Yq8FpCT) |
+
+**Example mainnet transactions** (Pinocchio program + Raydium CP-Swap CPI in logs):
+
+| Kind | Signature |
+|------|-----------|
+| Deposit — 3xSOL (2-leg fan-out, CP-Swap `Deposit` CPI) | [`3j1nCrnG…QQCq5X`](https://solscan.io/tx/3j1nCrnG15M9ZvnDWaVQMLRtnyhqhizSG1xkLnW4ShkqhqZQebLUttwEsgDhR3rUC4fmb7iJPa4jpBYWCiQQCq5X) |
+| Deposit — 5xBTC | [`4df5jUNB…pebGwUSs`](https://solscan.io/tx/4df5jUNBeEoBU4fMHcJktjWx4BE7LF1qnMXsQC8MoLRhKj6SGxQUVMVc1GX38NiLQuJLMJWJbJTREjeZpebGwUSs) |
+| Deposit — LEV 3X | [`3mDnbYNM…4ZNUiG`](https://solscan.io/tx/3mDnbYNMhVko2evpnfm2Cu8SvcqfGEGKtUeZcQ3R1Zod5jE9DGCyeWMT1xm1RGGmWd9jgAPth9C8ZeA5yL4ZNUiG) |
+| Withdraw (CP-Swap `Withdraw` CPI) | [`jXfNVqUN…ciK6kM`](https://solscan.io/tx/jXfNVqUNBSY9e5XZ6v3PKDr7qujGcfsFmU7Xd2kjPXCVmRXtamLtYa6adPccrKYT41LwBEwqRLUj8KtCkciK6kM) |
+| `init_config` | [`N5RhLJYi…5pAFm6`](https://solscan.io/tx/N5RhLJYiZKHew3GRc3SgzgTQXsSer1BacEX7Tz68iMGEVMbzMJ9o4G7Wiegx8JLoFM7zVHhUmScGsrV885pAFm6) |
+| `register_triangle` (3× CP-Swap `Initialize` in same tx) | [`4VR9HkYA…HLquXZF`](https://solscan.io/tx/4VR9HkYA73Y7hckoriVYkpffrCagAe92s2qBSRKayrJAiMt5BBvUAxTExRjzWaSyuoNXEVBav2JH4CTBJHLquXZF) |
+| `init_extra_account_metas` | [`5J8kViDM…KKDmUnr`](https://solscan.io/tx/5J8kViDMZKJkJ79Y4uwnj2tMiih5WbiTy3r6AmV59Lqx3t5Q63q85H24tzk7ZfDR7F1Lv2gKhyUUAynAnKKDmUnr) |
+| Raydium LP mint activity (3xSOL A/B pool) | [`3Lb58HxG…gwNNupJ4`](https://solscan.io/tx/3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4) — pool [`6LBJej9k…`](https://solscan.io/account/6LBJej9kh2Kzgun39dvpZzrrH73XRqw7YKXS2wjR4ku5), LP mint [`9Wa74CiH…`](https://solscan.io/account/9Wa74CiHe12aMQyBFitjuWhRwktGZ6hoicucUhxPX2b2) |
+| Receipt transfer → program CPI (transfer hook) | [`48Vj2Afb…JGRt3Y`](https://solscan.io/tx/48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y) — Token-2022 `TransferChecked` invokes `J345…` |
+| Backfill Metaplex metadata | [`2pX8NSLA…9rQLdD`](https://solscan.io/tx/2pX8NSLA1knyhJKE6Na6y3x37YNxLM6sG6AD8LF65qeTK3wtNoTstT86jwD1mt34WPbdsCiLgfGA6JJ2Mj9rQLdD) |
+| Backfill receipt T22 metadata | [`3669NsGK…u4t1r2`](https://solscan.io/tx/3669NsGKkd21fw4MjZSChcU3WumVYigpvRd4kTJopU7dSY6HLVNzzVQYgCuKi2U5zDvqBfYciEDsciDgPEu4t1r2) |
+
+**Not observed on mainnet (as of 2026-06-21):** permissionless `rebalance` (tag 0) in program tx history — logic is covered on the surfpool fork (`harness/tests/pinocchio-rebalance.ts`).
+
+**What this proves vs. does not:**
+
+- ✅ Program is deployed; deposit/withdraw hit **real Raydium CP-Swap vaults** (not the Anchor reference’s protocol-held reserves).
+- ✅ Triangle pools exist on-chain; LP positions accrue to the protocol authority PDA.
+- ⏳ Raydium `observation_state` TWAP is **not** the rebalance price input (oracle-free vault-implied ratio instead).
+- ⚠️ Early alpha — unaudited, few pairs, no guarantee of volume or NAV stability.
+
 ---
 
 ## What it does

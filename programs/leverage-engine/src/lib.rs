@@ -5,14 +5,13 @@
 //! (`MINTA` / `MINTB`), with three Raydium CP-Swap pools forming the triangle.
 //!
 //! ## Milestone status
-//! - **M1 (this file):** protocol state, `initialize_config`, oracle crank,
-//!   `deposit` (USDC → receipt + seed reserves), the concrete elastic mint math
-//!   (`math.rs`), a permissionless `rebalance` crank, and the receipt-token
-//!   transfer hook that applies the same rebalance ("transferrer pays"). Reserves
-//!   are protocol-held token accounts.
-//! - **M2 (next):** swap the protocol-held reserves for Raydium CP-Swap pool
-//!   vaults — CPI add-liquidity on `deposit`, CPI swap/seed on `rebalance` — and
-//!   replace the admin oracle push with an on-chain Raydium TWAP read.
+//! - **M1 (this Anchor crate only):** protocol state, `initialize_config`, admin
+//!   oracle crank, `deposit` (USDC → receipt + seed **protocol-held** reserves),
+//!   elastic mint math, permissionless `rebalance`, receipt transfer hook.
+//!   **Not the mainnet deploy** — see `pinocchio-programs/leverage-engine`.
+//! - **M2 (Pinocchio mainnet):** real Raydium CP-Swap vault CPIs for
+//!   deposit/withdraw/rebalance. Rebalance is oracle-free (vault-implied ratio);
+//!   Raydium `observation_state` TWAP is not wired in yet.
 //!
 //! ## ⚠️ Known, accepted risks (per design)
 //! "Mint the loser" has no restoring force: minting into the weak side of x·y=k

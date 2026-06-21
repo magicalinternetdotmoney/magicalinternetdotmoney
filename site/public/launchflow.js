@@ -14,7 +14,7 @@
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   var POOL_FEE_LAMPORTS = 150000000n; // Raydium CPMM create-pool fee (0.15 SOL each)
   var POOL_RENT_LAMPORTS = 45000000n; // LP mint + vaults + observation + pool state (per pool)
-  var SETUP_RENT_LAMPORTS = 80000000n; // mints, receipt T22, LUT, config, ATAs, hook metas
+  var SETUP_RENT_LAMPORTS = 95000000n; // mints, receipt T22+metadata, LUT, config, ATAs, hook metas (incl. oracle)
   var TX_FEE_LAMPORTS = 5000000n; // priority + signatures across the launch batch
 
   var SOL_GUARD_BUFFER = 10000000n; // 0.01 SOL headroom so the 3rd pool fee doesn't clip
@@ -39,7 +39,8 @@
         if (line.indexOf("failed:") >= 0 && line.indexOf("success") < 0) return line;
       }
     }
-    if (text.indexOf("InsufficientFunds") >= 0 || text.indexOf("insufficient") >= 0) return "insufficient SOL for rent or Raydium pool fees";
+    if (text.indexOf("InsufficientFundsForRent") >= 0) return "account rent underfunded in instruction (refresh and relaunch)";
+    if (text.indexOf("InsufficientFunds") >= 0 || text.indexOf("insufficient") >= 0) return "wallet SOL too low for this step — check balance after pool fees";
     if (text.indexOf("AlreadyInUse") >= 0 || text.indexOf("already in use") >= 0) return "already done on-chain";
     return text !== "null" ? text : "transaction failed on-chain";
   }
@@ -142,9 +143,7 @@
     var slot = await conn.getSlot("confirmed");
     var mintRent = await conn.getMinimumBalanceForRentExemption(spl.MINT_SIZE);
     var recLen = spl.getMintLen([spl.ExtensionType.TransferHook, spl.ExtensionType.MetadataPointer]);
-    var recRent = await conn.getMinimumBalanceForRentExemption(recLen);
-    var cLam = BigInt(await conn.getMinimumBalanceForRentExemption(400));
-    var hookMetaRent = BigInt(await conn.getMinimumBalanceForRentExemption(16 + 11 * 35));
+    var cLam = BigInt(await conn.getMinimumBalanceForRentExemption(432));
 
     // build the LUT + a LOCAL lookup-table account so we can compile the triangle v0 now
     var lutIxAndKey = ALT.createLookupTable({ authority: me, payer: me, recentSlot: slot - 1 });
@@ -190,8 +189,17 @@
       metaplexV3(A.publicKey, synthA.name, synthA.symbol, metaUri(A.publicKey, "A")),
       metaplexV3(B.publicKey, synthB.name, synthB.symbol, metaUri(B.publicKey, "B")),
     ];
-    var receiptMetaIxs = [
-      spl.createReallocateInstruction(R.publicKey, me, [spl.ExtensionType.TokenMetadata], me, [], T22),
+    // Pre-fund mint + on-mint TokenMetadata TLV in one tx (reallocate-after-init → UninitializedAccount).
+    var recMetaPacked = splMeta.pack({
+      mint: R.publicKey, updateAuthority: authority, name: recName, symbol: recSym, uri: recUri, additionalMetadata: [],
+    });
+    var recMetaLen = spl.TYPE_SIZE + spl.LENGTH_SIZE + recMetaPacked.length;
+    var recRent = (await conn.getMinimumBalanceForRentExemption(recLen + recMetaLen)) + 10000000;
+    var receiptCreateIxs = [
+      SystemProgram.createAccount({ fromPubkey: me, newAccountPubkey: R.publicKey, lamports: recRent, space: recLen, programId: T22 }),
+      spl.createInitializeTransferHookInstruction(R.publicKey, me, PROGRAM, T22),
+      spl.createInitializeMetadataPointerInstruction(R.publicKey, me, R.publicKey, T22),
+      spl.createInitializeMintInstruction(R.publicKey, DEC, me, null, T22),
       splMeta.createInitializeInstruction({
         programId: T22, metadata: R.publicKey, updateAuthority: authority, mint: R.publicKey,
         mintAuthority: me, name: recName, symbol: recSym, uri: recUri,
@@ -199,14 +207,21 @@
     ];
     var ataA = ata(A.publicKey, me, TOK), ataB = ata(B.publicKey, me, TOK);
     var D1 = Keypair.generate().publicKey, D2 = Keypair.generate().publicKey, D3 = Keypair.generate().publicKey;
+    var hasPumpOracle = !!(params.oraclePool && params.oracleBaseVault && params.oracleQuoteVault);
+    var oraclePool = hasPumpOracle ? new PublicKey(params.oraclePool) : PublicKey.default;
+    var oracleKind = hasPumpOracle ? 1 : 0;
+    var initOracleWad = hasPumpOracle && params.initOraclePriceWad ? BigInt(params.initOraclePriceWad) : 0n;
+    var initConfigData = Buffer.concat([
+      Buffer.from([1, authBump, cfgBump]), u64(20000n), u64(BigInt(lev) * 10000n), u64(2000n), u64(5000n), u128(ONE), u64(cLam),
+      oraclePool.toBuffer(), Buffer.from([oracleKind]), u128(initOracleWad),
+    ]);
     var initConfigIx = new TI({ programId: PROGRAM,
       keys: [k(me, true, true), k(cfgPda, true), k(U, false), k(A.publicKey, false), k(B.publicKey, false), k(R.publicKey, false), k(D1, false), k(D2, false), k(D3, false), k(SystemProgram.programId, false)],
-      data: Buffer.concat([Buffer.from([1, authBump, cfgBump]), u64(20000n), u64(BigInt(lev) * 10000n), u64(2000n), u64(5000n), u128(ONE), u64(cLam)]) });
+      data: initConfigData });
     var defs = [
       { label: "create MINTA + MINTB", ixs: mkMint(A).concat(mkMint(B)), signers: [A, B] },
-      { label: "create receipt (T22 + hook)", ixs: [SystemProgram.createAccount({ fromPubkey: me, newAccountPubkey: R.publicKey, lamports: recRent, space: recLen, programId: T22 }), spl.createInitializeTransferHookInstruction(R.publicKey, me, PROGRAM, T22), spl.createInitializeMetadataPointerInstruction(R.publicKey, me, R.publicKey, T22), spl.createInitializeMintInstruction(R.publicKey, DEC, me, null, T22)], signers: [R] },
+      { label: "create receipt (T22 + hook + metadata)", ixs: receiptCreateIxs, signers: [R] },
       { label: "metaplex metadata (MINTA/MINTB)", ixs: metaIxs, signers: [] },
-      { label: "receipt metadata (T22 on-mint)", ixs: receiptMetaIxs, signers: [] },
       { label: "mint seed liquidity", ixs: [spl.createAssociatedTokenAccountIdempotentInstruction(me, ataA, me, A.publicKey, TOK), spl.createMintToInstruction(A.publicKey, ataA, me, aTot, [], TOK), spl.createAssociatedTokenAccountIdempotentInstruction(me, ataB, me, B.publicKey, TOK), spl.createMintToInstruction(B.publicKey, ataB, me, bTot, [], TOK)], signers: [] },
       { label: "init config", ixs: [initConfigIx], signers: [] },
       { label: "fire the 3 USDC pools (atomic)", ixs: [CB.setComputeUnitLimit({ units: 1400000 })].concat(inits.map(function (i) { return i.ix; })).concat([registerIx]), signers: [], lookups: [lutAccount] },
@@ -221,15 +236,28 @@
     defs.push({ label: "hand minting to the program", ixs: [spl.createSetAuthorityInstruction(A.publicKey, me, spl.AuthorityType.MintTokens, authority, [], TOK), spl.createSetAuthorityInstruction(B.publicKey, me, spl.AuthorityType.MintTokens, authority, [], TOK), spl.createSetAuthorityInstruction(R.publicKey, me, spl.AuthorityType.MintTokens, authority, [], T22)], signers: [] });
     var metaPair = PublicKey.findProgramAddressSync([Buffer.from("extra-account-metas"), R.publicKey.toBuffer()], PROGRAM);
     var hookMetaList = metaPair[0], hookMetaBump = metaPair[1];
-    var hookMask = 0b00101111101;
     var hookEmbeds = [cfgPda, authority, A.publicKey, B.publicKey,
       vaultOf(inits[0].pool, A.publicKey), vaultOf(inits[0].pool, B.publicKey),
       vaultOf(inits[1].pool, A.publicKey), vaultOf(inits[1].pool, U),
       vaultOf(inits[2].pool, B.publicKey), vaultOf(inits[2].pool, U), TOK];
+    if (oracleKind === 1 && params.oracleBaseVault && params.oracleQuoteVault) {
+      hookEmbeds = hookEmbeds.concat([
+        oraclePool,
+        new PublicKey(params.oracleBaseVault),
+        new PublicKey(params.oracleQuoteVault),
+      ]);
+    }
+    var hookCount = hookEmbeds.length;
+    if (hookCount < 11 || hookCount > 16) throw new Error("invalid hook embed count: " + hookCount);
+    var hookMetaRent = BigInt(await conn.getMinimumBalanceForRentExemption(16 + hookCount * 35));
+    var hookMask = 0;
+    for (var hi = 0; hi < hookCount; hi++) {
+      if (hi === 0 || hi === 2 || hi === 3 || (hi >= 4 && hi <= 9)) hookMask |= (1 << hi);
+    }
     var initHookIx = new TI({ programId: PROGRAM,
       keys: [k(me, true, true), k(hookMetaList, true), k(R.publicKey, false), k(SystemProgram.programId, false)]
         .concat(hookEmbeds.map(function (pk) { return k(pk, false); })),
-      data: Buffer.concat([Buffer.from([7]), u64(hookMetaRent), Buffer.from([11]),
+      data: Buffer.concat([Buffer.from([7]), u64(hookMetaRent), Buffer.from([hookCount]),
         Buffer.from([hookMask & 0xff, (hookMask >> 8) & 0xff]), Buffer.from([hookMetaBump])]) });
     defs.push({ label: "init transfer-hook extras", ixs: [CB.setComputeUnitLimit({ units: 200000 }), initHookIx], signers: [], hookReceipt: R.publicKey });
 
@@ -238,6 +266,28 @@
         var ai = await conn.getAccountInfo(hookMetaList, "confirmed");
         return !!(ai && ai.owner && ai.owner.equals(PROGRAM));
       } catch (e) { return false; }
+    }
+
+    async function mintExists(pk, prog) {
+      try {
+        var ai = await conn.getAccountInfo(pk, "confirmed");
+        return !!(ai && ai.owner && ai.owner.equals(prog));
+      } catch (e) { return false; }
+    }
+
+    async function receiptReady() {
+      if (!(await mintExists(R.publicKey, T22))) return false;
+      try {
+        var md = await spl.getTokenMetadata(conn, R.publicKey, "confirmed", T22);
+        return !!(md && (md.name || md.symbol));
+      } catch (e) { return false; }
+    }
+
+    async function stepAlreadyDone(d) {
+      if (d.label === "create MINTA + MINTB") return (await mintExists(A.publicKey, TOK)) && (await mintExists(B.publicKey, TOK));
+      if (d.label === "create receipt (T22 + hook + metadata)") return receiptReady();
+      if (d.label === "init transfer-hook extras") return hookMetaReady(R.publicKey);
+      return false;
     }
 
     // build vtxs for the given defs at a blockhash, ephemeral-sign, then wallet signs the batch
@@ -259,7 +309,7 @@
       var round = 0, lastErr = null, staleRounds = 0;
       for (var pi = 0; pi < pend.length; pi++) {
         var pd = pend[pi];
-        if (defList[pd.i].label === "init transfer-hook extras" && await hookMetaReady(defList[pd.i].hookReceipt || R.publicKey)) pd.done = true;
+        if (await stepAlreadyDone(defList[pd.i])) pd.done = true;
       }
       while (pend.some(function (x) { return !x.done; }) && round < 60) {
         round++;
@@ -272,7 +322,7 @@
           pidx.forEach(function (i, j) { var pj = pend.find(function (x) { return x.i === i; }); pj.vtx = re[j]; pj.sig = null; pj.err = null; });
         }
         var next = pend.find(function (x) { return !x.done; });
-        if (next && defList[next.i].label === "init transfer-hook extras" && await hookMetaReady(defList[next.i].hookReceipt || R.publicKey)) {
+        if (next && await stepAlreadyDone(defList[next.i])) {
           next.done = true; lastErr = null; staleRounds = 0;
         } else if (next && !next.sig) {
           try { next.sig = await conn.sendRawTransaction(next.vtx.serialize(), { skipPreflight: true, maxRetries: 2 }); }
@@ -306,7 +356,7 @@
           }
         }
         staleRounds = progressed ? 0 : staleRounds + 1;
-        if (staleRounds >= 12 && next && defList[next.i].label === "init transfer-hook extras" && await hookMetaReady(defList[next.i].hookReceipt || R.publicKey)) {
+        if (staleRounds >= 12 && next && await stepAlreadyDone(defList[next.i])) {
           next.done = true; lastErr = null;
         }
         var doneN = pend.filter(function (x) { return x.done; }).length;

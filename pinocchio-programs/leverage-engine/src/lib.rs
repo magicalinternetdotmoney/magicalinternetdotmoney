@@ -13,6 +13,7 @@
 mod config;
 mod cpswap_cpi;
 mod hook;
+mod pumpswap;
 mod lut_cpi;
 mod metadata_cpi;
 mod metaplex_cpi;
@@ -20,7 +21,8 @@ mod token_cpi;
 mod validation;
 
 use config::{Config, InitParams};
-use leverage_math::{implied_market, partial_ratio_advance, plan_from_market, Side, CRANK_ABSORB_BPS};
+use leverage_math::{implied_market, partial_ratio_advance, plan_from_market, plan_two_pool_from_oracle_wad, Side, CRANK_ABSORB_BPS};
+use config::{ORACLE_PUMPSWAP, ORACLE_NONE};
 use pinocchio::{
     cpi::{Seed, Signer},
     entrypoint,
@@ -137,6 +139,17 @@ fn init_config(program_id: &Address, accounts: &mut [AccountView], d: &[u8]) -> 
             Address::from(<[u8; 32]>::try_from(&d[60..92]).unwrap_or([0u8; 32]))
         } else {
             Address::from([0u8; 32])
+        },
+        oracle_pool: if d.len() >= 124 {
+            Address::from(<[u8; 32]>::try_from(&d[92..124]).unwrap_or([0u8; 32]))
+        } else {
+            Address::from([0u8; 32])
+        },
+        oracle_kind: if d.len() >= 125 { d[124] } else { ORACLE_NONE },
+        init_oracle_price_wad: if d.len() >= 141 {
+            du128(d, 125)?
+        } else {
+            0
         },
     };
     let lamports = du64(d, 50)?;
@@ -577,14 +590,19 @@ fn rebalance(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
 /// layout from `base`: 0 config(w) 1 authority 2 mint_a(w) 3 mint_b(w)
 ///   4 vault_ab_a(w) 5 vault_ab_b(w) 6 vault_ausdc_a(w) 7 vault_ausdc_usdc
 ///   8 vault_busdc_b(w) 9 vault_busdc_usdc 10 token_program
+/// When config.oracle_kind == pumpswap, also pass:
+///   11 oracle_pool 12 oracle_base_vault 13 oracle_quote_vault
 /// `user_leverage_bps == 0` ⇒ use the config's l_max (full leverage, elastic-capped).
 fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u64) -> ProgramResult {
     if accounts.len() < base + 10 {
         return Err(ProgramError::NotEnoughAccountKeys);
     }
-    let (last_ratio, l_min, l_max, max_mint, breaker, auth_bump, paused) = {
+    let (last_ratio, l_min, l_max, max_mint, breaker, auth_bump, paused, oracle_kind, oracle_pool, oracle_last) = {
         let data = accounts[base].try_borrow()?;
         let c = Config::load(&data)?;
+        let kind = c.oracle_kind();
+        let pool = if kind == ORACLE_PUMPSWAP { c.oracle_pool()? } else { Address::from([0u8; 32]) };
+        let last = if kind == ORACLE_PUMPSWAP { c.oracle_price_last_wad()? } else { 0 };
         (
             c.last_ratio_wad()?,
             c.l_min_bps()?,
@@ -593,6 +611,9 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
             c.breaker_bps()?,
             c.auth_bump(),
             c.paused(),
+            kind,
+            pool,
+            last,
         )
     };
     if paused {
@@ -613,18 +634,58 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
         Some(m) => m,
         None => return Ok(()),
     };
-    let plan = match plan_from_market(
-        last_ratio, &market, res_ab_a, res_ab_b, res_ausdc_a, res_busdc_b, supply_a, supply_b,
-        leverage, l_min, l_max, max_mint, breaker,
-    ) {
-        Some(p) => p,
-        None => {
-            let mut data = accounts[base].try_borrow_mut()?;
-            config::set_last_ratio(
-                &mut data,
-                partial_ratio_advance(last_ratio, market.ratio_wad, CRANK_ABSORB_BPS),
-            );
+
+    let oracle_now_wad = if oracle_kind == ORACLE_PUMPSWAP {
+        if oracle_pool == Address::from([0u8; 32]) || accounts.len() < base + 13 {
             return Ok(());
+        }
+        let (base_vault, quote_vault) = pumpswap::validate_pool(&accounts[base + 11], &oracle_pool)?;
+        if accounts[base + 12].address() != &base_vault || accounts[base + 13].address() != &quote_vault {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        let base_res = token_amount(&accounts[base + 12])?;
+        let quote_res = token_amount(&accounts[base + 13])?;
+        match pumpswap::price_wad(base_res, quote_res) {
+            Some(p) => p,
+            None => return Ok(()),
+        }
+    } else {
+        0
+    };
+
+    let plan = if oracle_kind == ORACLE_PUMPSWAP {
+        match plan_two_pool_from_oracle_wad(
+            oracle_last, oracle_now_wad, res_ab_a, res_ab_b, res_ausdc_a, res_busdc_b, supply_a, supply_b,
+            leverage, l_min, l_max, max_mint, breaker,
+        ) {
+            Some(p) => p,
+            None => {
+                let mut data = accounts[base].try_borrow_mut()?;
+                config::set_oracle_price_last(
+                    &mut data,
+                    partial_ratio_advance(oracle_last, oracle_now_wad, CRANK_ABSORB_BPS),
+                );
+                config::set_last_ratio(
+                    &mut data,
+                    partial_ratio_advance(last_ratio, market.ratio_wad, CRANK_ABSORB_BPS),
+                );
+                return Ok(());
+            }
+        }
+    } else {
+        match plan_from_market(
+            last_ratio, &market, res_ab_a, res_ab_b, res_ausdc_a, res_busdc_b, supply_a, supply_b,
+            leverage, l_min, l_max, max_mint, breaker,
+        ) {
+            Some(p) => p,
+            None => {
+                let mut data = accounts[base].try_borrow_mut()?;
+                config::set_last_ratio(
+                    &mut data,
+                    partial_ratio_advance(last_ratio, market.ratio_wad, CRANK_ABSORB_BPS),
+                );
+                return Ok(());
+            }
         }
     };
 
@@ -646,6 +707,12 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
 
     // Partial basis advance — repeated transfers keep cranking until caught up.
     let mut data = accounts[base].try_borrow_mut()?;
+    if oracle_kind == ORACLE_PUMPSWAP {
+        config::set_oracle_price_last(
+            &mut data,
+            partial_ratio_advance(oracle_last, oracle_now_wad, CRANK_ABSORB_BPS),
+        );
+    }
     config::set_last_ratio(
         &mut data,
         partial_ratio_advance(last_ratio, market.ratio_wad, CRANK_ABSORB_BPS),
@@ -663,6 +730,14 @@ fn hook_execute(accounts: &mut [AccountView]) -> ProgramResult {
     // leverage 0 ⇒ config l_max. Hook must not brick transfers, so a too-small
     // account set (e.g. meta list not initialised) is a soft no-op.
     if accounts.len() < 5 + 10 {
+        return Ok(());
+    }
+    let need = {
+        let data = accounts[5].try_borrow()?;
+        let c = Config::load(&data)?;
+        if c.oracle_kind() == ORACLE_PUMPSWAP { 13 } else { 10 }
+    };
+    if accounts.len() < 5 + need {
         return Ok(());
     }
     run_rebalance(accounts, 5, 0)

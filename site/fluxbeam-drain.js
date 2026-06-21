@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Drain all FluxBeam LP positions held by payer (~levered.json).
+// Drain all FluxBeam LP positions held by payer keypair (KEYPAIR env or CLI arg).
 "use strict";
 
 const fs = require("fs");
@@ -24,7 +24,7 @@ const {
 const { FLUX_PROGRAM_ID, parsePoolPubkey, WSOL, USDC } = require("./flux-indexer.js");
 
 const RPC = process.env.RPC_URL || "https://api.mainnet-beta.solana.com";
-const KEYPAIR = process.env.KEYPAIR || `${process.env.HOME}/levered.json`;
+const KEYPAIR = process.env.KEYPAIR || process.argv.find((a) => a.endsWith(".json")) || "";
 const PRIORITY = Number(process.env.PRIORITY_FEE || "500000");
 
 const POOLS = [

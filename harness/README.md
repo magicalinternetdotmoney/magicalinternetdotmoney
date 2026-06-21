@@ -29,7 +29,8 @@ Verified: the fork reports `solana-core 3.1.6`, clones
 
 Args: `init_amount_0`, `init_amount_1`, `open_time`. 20 accounts; the pool-derived
 ones are PDAs (`pool_state`, `lp_mint`, `token_{0,1}_vault`, `observation_state`).
-`observation_state` is CP-Swap's on-chain TWAP — our M2 oracle source.
+`observation_state` holds CP-Swap's on-chain TWAP accumulator — **not wired into
+rebalance today** (see Status).
 
 **Atomic triangle:** all three pools (A/B, A/USDC, B/USDC) are created in one tx.
 Our wrapper uses instruction introspection (the Instructions sysvar) to assert the
@@ -38,8 +39,18 @@ config, so a half-built triangle can't exist.
 
 ## Status
 
-- ✅ surfpool fork + CP-Swap cloning verified
-- ✅ economics: "mint the loser into both pools" + user-specified leverage, unit-tested
-- ⏳ next: CP-Swap `initialize` ×3 CPI + introspection guard; `deposit` add-liquidity;
-  `rebalance` swap-the-loser-into-both-pools; on-chain TWAP read from `observation_state`
-- ⏳ then: TS integration tests on the fork; Pinocchio port for mainnet deploy
+**Mainnet target:** `pinocchio-programs/leverage-engine` (not the Anchor crate in
+`programs/leverage-engine`, which is still M1 with protocol-held reserves).
+
+| Area | Status |
+|------|--------|
+| surfpool fork + CP-Swap cloning | ✅ verified |
+| economics (`leverage-math`) | ✅ unit-tested |
+| CP-Swap `initialize` ×3 + `register_triangle` introspection | ✅ Pinocchio + browser launch |
+| CP-Swap `deposit` / `withdraw` CPI (real pool vaults) | ✅ Pinocchio mainnet |
+| `rebalance` / transfer-hook (mint loser into **Raydium vaults**) | ✅ oracle-free via implied A/B ratio from vault balances |
+| TS integration tests on fork | ✅ `pinocchio-deposit`, `pinocchio-rebalance`, `pinocchio-triangle`, `pinocchio-hook`, … |
+| Pinocchio mainnet deploy | ✅ `J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe` |
+| Raydium `observation_state` TWAP as rebalance input | ⏳ not implemented — ratio comes from live vault balances, not TWAP |
+| Optional PumpSwap oracle (MEME / non-Raydium underlying) | ✅ partial — vault read on rebalance; Raydium USDC anchor still primary |
+| Anchor `programs/leverage-engine` CP-Swap port | ⏳ stale M1 reference only |

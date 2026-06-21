@@ -1,4 +1,11 @@
-# leverage-engine — Dynamic Leveraged Synthetic Pair (experimental)
+# leverage-engine — Anchor reference (M1 only)
+
+> **Not the mainnet program.** Production deploys use
+> [`pinocchio-programs/leverage-engine`](../../pinocchio-programs/leverage-engine/)
+> (`J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe`), which CPIs into **real Raydium
+> CP-Swap pool vaults** for deposit, withdraw, and rebalance. **This Anchor crate is
+> a smaller IDL-driven reference** kept for surfpool dev and math shims — it still uses
+> **protocol-held token accounts** as reserves (M1).
 
 A faithful, on-chain implementation of the design doc: a **Token-2022 receipt token whose transfer
 hook drives elastic "mint the loser" rebalancing** of a synthetic pair (`MINTA` / `MINTB`), with a
@@ -12,16 +19,15 @@ triangle of three **Raydium CP-Swap** pools as the price surface.
 
 ## How it maps to the design doc
 
-| Design doc concept | Implementation |
-|---|---|
-| Receipt token (Token-2022, transfer hooks) | `receipt_mint`; hook = `transfer_hook` + `fallback` |
-| "Transferrer pays" rebalancing | Hook applies the rebalance inside the transfer CPI |
-| Elastic mint/burn, 2x–5x variable leverage | `math.rs` — see below |
-| "Mint the loser" | `plan_rebalance` picks the loser side and mint amount |
-| Three CPMM pools (triangle) | Raydium CP-Swap pool ids stored in `Config` (CPI in M2) |
-| TWAP oracle (variable, user-funded) | `Config.price_now/price_last`, pushed by `update_oracle` |
-| Circuit breakers / caps | `breaker_bps`, `max_mint_bps`, `min_rebalance_interval`, `paused` |
-| Dashboard: effective leverage | `math::effective_leverage_bps` |
+| Design doc concept | This Anchor crate (M1) | Pinocchio mainnet |
+|---|---|---|
+| Receipt token (Token-2022, transfer hooks) | ✅ | ✅ |
+| "Transferrer pays" rebalancing | ✅ | ✅ |
+| Elastic mint/burn, 2x–5x variable leverage | ✅ | ✅ |
+| "Mint the loser" | ✅ | ✅ |
+| Three CPMM pools (triangle) | pool ids in `Config` only | ✅ real vault CPI |
+| TWAP oracle | admin `update_oracle` push | ⏳ not Raydium TWAP; oracle-free ratio or optional PumpSwap |
+| Circuit breakers / caps | ✅ | ✅ |
 
 ## The math (was "TBD" in the doc — now concrete)
 
@@ -42,14 +48,14 @@ All ratios/leverage are in basis points (`10_000 == 1.0`). Pure functions, fully
 cargo test -p leverage-engine --lib
 ```
 
-## Instructions
+## Instructions (Anchor M1)
 
 | ix | who | what |
 |---|---|---|
 | `initialize_config` | admin | record mints, reserves, pool ids, oracle, leverage params |
 | `set_paused` | admin | emergency pause |
 | `update_oracle` | admin (M1) | push reference price; shifts `price_now → price_last` |
-| `deposit` | anyone | USDC → receipt 1:1 + seed both reserves 50/50 |
+| `deposit` | anyone | USDC → receipt 1:1 + seed **protocol-held** reserves 50/50 |
 | `rebalance` | anyone | permissionless crank; applies the elastic mint step |
 | `initialize_extra_account_meta_list` | admin | wire the receipt hook's extra accounts |
 | `transfer_hook` / `fallback` | Token-2022 CPI | apply the same rebalance on receipt transfer |
@@ -59,14 +65,14 @@ receipt transfer never fails for a benign reason.
 
 ## Milestones
 
-- **M1 (done):** state + concrete math + `deposit` + oracle crank + permissionless `rebalance` +
-  receipt hook. Reserves are protocol-held token accounts. Builds for SBF; math unit-tested.
-- **M2 (next):** replace protocol-held reserves with **Raydium CP-Swap pool vaults** — add-liquidity
-  CPI on `deposit`, swap/seed CPI on `rebalance` — and replace the admin oracle push with an
-  on-chain **Raydium TWAP** read validated against the stored `oracle`. Pool ids are already in
-  `Config`.
-- **M3:** TypeScript integration tests (deploy Raydium CP-Swap to localnet, full deposit→transfer→
-  rebalance flow), keeper bot, dashboard.
+- **M1 (this crate):** state + concrete math + `deposit` + admin oracle crank +
+  permissionless `rebalance` + receipt hook. Reserves are **protocol-held token accounts**.
+  Builds for SBF; math unit-tested. **Do not confuse with mainnet.**
+- **M2 (Pinocchio — shipped on mainnet):** Raydium CP-Swap pool vaults — add-liquidity CPI on
+  `deposit`, mint-the-loser into pool vaults on `rebalance`, `register_triangle` introspection.
+  Rebalance price signal is **oracle-free** (implied A/B ratio from vault balances), not Raydium
+  `observation_state` TWAP.
+- **M3 (open):** formal audit, keeper bot, Raydium TWAP as optional price input, dashboard hardening.
 
 ## Build
 

@@ -372,6 +372,67 @@ pub fn ratio_return_bps(last_wad: u128, now_wad: u128) -> Option<i64> {
     i64::try_from(bps).ok()
 }
 
+/// Plan a two-pool rebalance using an external oracle price (WAD, quote per base).
+///
+/// Loser selection follows the oracle move (fell → A, rose → B); mint sizing uses
+/// the triangle pool reserves with elastic leverage decay on the pair reserve.
+#[allow(clippy::too_many_arguments)]
+pub fn plan_two_pool_from_oracle_wad(
+    oracle_last_wad: u128,
+    oracle_now_wad: u128,
+    reserve_a_in_pair: u64,
+    reserve_b_in_pair: u64,
+    reserve_a_in_a_usdc: u64,
+    reserve_b_in_b_usdc: u64,
+    supply_a: u64,
+    supply_b: u64,
+    user_leverage_bps: u64,
+    l_min_bps: u64,
+    l_max_bps: u64,
+    max_mint_bps: u64,
+    breaker_bps: u64,
+) -> Option<RebalancePlan> {
+    let r = ratio_return_bps(oracle_last_wad, oracle_now_wad)?;
+    if r == 0 {
+        return None;
+    }
+    let side = if r < 0 { Side::A } else { Side::B };
+    let abs_bps = r.unsigned_abs();
+    let sized_bps = clamp_crank_move_bps(abs_bps);
+
+    let (pair_reserve, usdc_pool_reserve, supply) = match side {
+        Side::A => (reserve_a_in_pair, reserve_a_in_a_usdc, supply_a),
+        Side::B => (reserve_b_in_pair, reserve_b_in_b_usdc, supply_b),
+    };
+
+    let pick = if user_leverage_bps == 0 { l_max_bps } else { user_leverage_bps };
+    let user = clamp_leverage_bps(pick, l_min_bps, l_max_bps);
+    let elastic = elastic_leverage_bps(l_min_bps, l_max_bps, pair_reserve, supply);
+    let leverage_bps = user.min(elastic);
+
+    if breaker_bps != 0 && abs_bps >= breaker_bps {
+        return Some(RebalancePlan {
+            side,
+            amount_pair_pool: 0,
+            amount_usdc_pool: 0,
+            leverage_bps,
+            abs_return_bps: abs_bps,
+        });
+    }
+
+    let amount_pair_pool =
+        loser_mint_amount(pair_reserve, sized_bps, leverage_bps, max_mint_bps, 0)?;
+    let amount_usdc_pool =
+        loser_mint_amount(usdc_pool_reserve, sized_bps, leverage_bps, max_mint_bps, 0)?;
+    Some(RebalancePlan {
+        side,
+        amount_pair_pool,
+        amount_usdc_pool,
+        leverage_bps,
+        abs_return_bps: abs_bps,
+    })
+}
+
 /// Plan a rebalance from the implied market — the oracle-free entry point.
 ///
 /// The loser is whichever synthetic the A/B ratio moved *against* since the last
