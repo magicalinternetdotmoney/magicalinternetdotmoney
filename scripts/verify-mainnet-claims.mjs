@@ -21,6 +21,7 @@ const SAMPLE_TXS = {
   registerTriangle: "4VR9HkYA73Y7hckoriVYkpffrCagAe92s2qBSRKayrJAiMt5BBvUAxTExRjzWaSyuoNXEVBav2JH4CTBJHLquXZF",
   initHook: "5J8kViDMZKJkJ79Y4uwnj2tMiih5WbiTy3r6AmV59Lqx3t5Q63q85H24tzk7ZfDR7F1Lv2gKhyUUAynAnKKDmUnr",
   transferHookExecute: "48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y",
+  transferHookRebalance3xSOL: "Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w",
   raydiumLpMintActivity: "3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4",
 };
 
@@ -158,7 +159,8 @@ async function main() {
     const withNav = (pairList || []).filter((p) => p.nav != null);
     ok("pairs with receipt supply (nav)", withNav.length >= 2, `nav pairs: ${withNav.map((p) => p.sym).join(", ")}`);
     ok("site has sampleTransactions", !!status.sampleTransactions?.deposit3xSOL, status.sampleTransactions ? "present" : "MISSING — deploy pending");
-    ok("rebalanceObservedOnMainnet false", status.rebalanceObservedOnMainnet === false || status.rebalanceObservedOnMainnet === undefined);
+    ok("transferHookObservedOnMainnet true", status.transferHookObservedOnMainnet === true);
+    ok("rebalanceObservedOnMainnet false (tag 0 only)", status.rebalanceObservedOnMainnet === false);
   } catch (e) {
     ok("site APIs reachable", false, String(e.message));
   }
@@ -182,9 +184,9 @@ async function main() {
       if (kind === "initHook") {
         ok("initHook invokes program", txHasProgram(tx, PROGRAM));
       }
-      if (kind === "transferHookExecute") {
+      if (kind === "transferHookExecute" || kind === "transferHookRebalance3xSOL") {
         const logs = (tx.meta?.logMessages || []).join("\n");
-        ok("transfer hook: receipt TransferChecked → program CPI", /TransferChecked/.test(logs) && logs.includes(PROGRAM));
+        ok(`transfer hook: ${kind}`, /TransferChecked/.test(logs) && logs.includes(PROGRAM));
       }
     } catch (e) {
       ok(`tx fetch: ${kind}`, false, e.message);

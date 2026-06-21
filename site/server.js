@@ -808,6 +808,7 @@ const MAINNET_SAMPLE_TXS = {
   backfillReceipt: "3669NsGKkd21fw4MjZSChcU3WumVYigpvRd4kTJopU7dSY6HLVNzzVQYgCuKi2U5zDvqBfYciEDsciDgPEu4t1r2",
   updateMetadata: "2q5V3DVx2d6pXuUCwJfGK6uKreZbjwv9w2YuPeigJNmf3BspC8osRipYyWZMFHSF1ZNBhKAaCbV7JTDjYq9kXqo3",
   transferHookExecute: "48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y",
+  transferHookRebalance3xSOL: "Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w",
   raydiumLpMintActivity: "3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4",
 };
 const MAINNET_PROGRAM_DATA = "F1QCWDHFBMr1BsL7CTdetpxTbQXkzwDkQVUmy3EvknE5";
@@ -886,6 +887,7 @@ const server = http.createServer(async (req, res) => {
       walletRequiredFor: ["/api/balance", "deposit", "withdraw", "launch"],
       raydiumLpExample: MAINNET_RAYDIUM_LP_3XSOL_AB,
       sampleTransactions: MAINNET_SAMPLE_TXS,
+      transferHookObservedOnMainnet: true,
       rebalanceObservedOnMainnet: false,
       verify: {
         program: "https://solscan.io/account/" + PROGRAM_ID,
@@ -896,7 +898,8 @@ const server = http.createServer(async (req, res) => {
       },
       notes: [
         "Pinocchio mainnet: deposit/withdraw CPI into Raydium CP-Swap pool vaults (see sample txs + LP mint activity).",
-        "Permissionless rebalance (tag 0) not observed in mainnet program history as of 2026-06-21 — covered on surfpool fork.",
+        "Receipt transfer-hook rebalance observed on mainnet (see transferHookExecute + transferHookRebalance3xSOL) — Token-2022 TransferChecked invokes J345….",
+        "Standalone permissionless rebalance (tag 0) not observed in mainnet program history as of 2026-06-21 — covered on surfpool fork.",
         "Launch is ~10 wallet-approved txs, not a single click.",
         "site/_handoff/ is a pre-build Claude design mockup, not production proof.",
         "Public read APIs work without a wallet: /api/status, /api/pairs, /api/charts.",

@@ -61,8 +61,10 @@ curl -s https://magicalinternet.money/api/pairs | jq '.pairs | length'
     "backfillReceipt": "3669NsGKkd21fw4MjZSChcU3WumVYigpvRd4kTJopU7dSY6HLVNzzVQYgCuKi2U5zDvqBfYciEDsciDgPEu4t1r2",
     "updateMetadata": "2q5V3DVx2d6pXuUCwJfGK6uKreZbjwv9w2YuPeigJNmf3BspC8osRipYyWZMFHSF1ZNBhKAaCbV7JTDjYq9kXqo3",
     "transferHookExecute": "48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y",
+    "transferHookRebalance3xSOL": "Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w",
     "raydiumLpMintActivity": "3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4"
   },
+  "transferHookObservedOnMainnet": true,
   "rebalanceObservedOnMainnet": false,
   "verify": {
     "program": "https://solscan.io/account/J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe",
@@ -72,7 +74,8 @@ curl -s https://magicalinternet.money/api/pairs | jq '.pairs | length'
   },
   "notes": [
     "Pinocchio mainnet: deposit/withdraw CPI into Raydium CP-Swap pool vaults (see sample txs + LP mint activity).",
-    "Permissionless rebalance (tag 0) not observed in mainnet program history as of 2026-06-21 — covered on surfpool fork.",
+    "Receipt transfer-hook rebalance observed on mainnet (see transferHookExecute + transferHookRebalance3xSOL) — Token-2022 TransferChecked invokes J345….",
+    "Standalone permissionless rebalance (tag 0) not observed in mainnet program history as of 2026-06-21 — covered on surfpool fork.",
     "Launch is ~10 wallet-approved txs, not a single click.",
     "site/_handoff/ is a pre-build Claude design mockup, not production proof.",
     "Public read APIs work without a wallet: /api/status, /api/pairs, /api/charts."
@@ -103,15 +106,17 @@ curl -s https://magicalinternet.money/api/pairs | jq '.pairs | length'
 | `backfillReceipt` | [3669NsGKkd21fw4MjZSChcU3WumVYigpvRd4kTJopU7dSY6HLVNzzVQYgCuKi2U5zDvqBfYciEDsciDgPEu4t1r2](https://solscan.io/tx/3669NsGKkd21fw4MjZSChcU3WumVYigpvRd4kTJopU7dSY6HLVNzzVQYgCuKi2U5zDvqBfYciEDsciDgPEu4t1r2) |
 | `updateMetadata` | [2q5V3DVx2d6pXuUCwJfGK6uKreZbjwv9w2YuPeigJNmf3BspC8osRipYyWZMFHSF1ZNBhKAaCbV7JTDjYq9kXqo3](https://solscan.io/tx/2q5V3DVx2d6pXuUCwJfGK6uKreZbjwv9w2YuPeigJNmf3BspC8osRipYyWZMFHSF1ZNBhKAaCbV7JTDjYq9kXqo3) |
 | `transferHookExecute` | [48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y](https://solscan.io/tx/48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y) |
+| `transferHookRebalance3xSOL` | [Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w](https://solscan.io/tx/Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w) — 3xSOL receipt `2P7Aibym…`, ATA create + `TransferChecked` → `J345…` CPI |
 | `raydiumLpMintActivity` | [3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4](https://solscan.io/tx/3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4) |
 
-Deposit/withdraw txs above show **Raydium CP-Swap `Deposit` / `Withdraw` CPI** in logs. `transferHookExecute` is a receipt `TransferChecked` that invokes `J345…` as an inner program.
+Deposit/withdraw txs show **Raydium CP-Swap `Deposit` / `Withdraw` CPI** in logs. **Transfer-hook rebalance is observed** on mainnet: receipt `TransferChecked` invokes `J345…` (see `transferHookExecute` and `transferHookRebalance3xSOL`).
 
-**Not observed on mainnet (as of 2026-06-21):** permissionless `rebalance` (tag 0) in program tx history — logic is covered on the surfpool fork (`harness/tests/pinocchio-rebalance.ts`).
+**Not observed on mainnet (as of 2026-06-21):** standalone permissionless `rebalance` (tag 0) in program tx history — hook-fired rebalance on receipt transfer *is* observed. Tag-0 logic is covered on the surfpool fork (`harness/tests/pinocchio-rebalance.ts`).
 
 **What this proves vs. does not:**
 
 - ✅ Program is deployed; deposit/withdraw hit **real Raydium CP-Swap vaults** (not the Anchor reference’s protocol-held reserves).
+- ✅ **Receipt transfer-hook rebalance** fires on mainnet (receipt transfer → `J345…` CPI).
 - ✅ Triangle pools exist on-chain; LP positions accrue to the protocol authority PDA.
 - ⏳ Raydium `observation_state` TWAP is **not** the rebalance price input (oracle-free vault-implied ratio instead).
 - ⚠️ Early alpha — unaudited, few pairs, no guarantee of volume or NAV stability.
