@@ -14,11 +14,19 @@ Live site: [magicalinternet.money](https://magicalinternet.money)
 | **Maturity** | Early-stage research software — small number of live pairs, no audit, no formal verification |
 | **Mainnet program** | Pinocchio `J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe` — deposit/withdraw/rebalance use **real Raydium CP-Swap pool vaults** (not protocol-held reserves) |
 | **Rebalance price signal** | Oracle-free: implied MINTA/MINTB ratio from on-chain vault balances + supplies. **Raydium `observation_state` TWAP is not used** |
+| **Price crawl** | Optional multivendor index: **two reserve token accounts** → `quote/base` WAD; boxed in PDA, **14 hook metas** (not 16 — Token-2022 OOM). See **[NO-ORACLES.md](./NO-ORACLES.md)** |
+| **Mainnet proof (2026-06-21)** | **100 receipt transfers** across 4 LP pairs after ~1/5 USDC deposit each; crawl + rebalance mints on Solscan — details in [NO-ORACLES.md](./NO-ORACLES.md) |
 | **Optional oracle** | PumpSwap vault read for MEME / non-Raydium underlyings (pairs can still run triangle-only) |
 | **Anchor crate** | `programs/leverage-engine` is a **stale M1 reference** (protocol-held reserves) — kept for IDL/surfpool; not what ships on mainnet |
 | **Rebalance (mainnet)** | Receipt **transfer hook** = rebalance crank: `TransferChecked` → `J345…` → mint loser into Raydium vaults — [proof tx](https://solscan.io/tx/Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w) |
 | **Site** | [magicalinternet.money](https://magicalinternet.money) indexes real on-chain state; launching a pair is **~10 wallet txs**, not one click |
 | **Design mockup** | `site/_handoff/` is a pre-build Claude design comp — not production proof |
+
+### No oracles
+
+Rebalance and the optional **price crawl** read **on-chain reserves only** — no Pyth, no Switchboard, no Raydium TWAP, no off-chain feed. The transfer hook samples two boxed SPL vault accounts per transfer; pool/LUT discovery happens on the permissionless `advance_crawl` crank.
+
+Full architecture, account boxing, OOM lessons, and **100-transfer mainnet stress receipts**: **[NO-ORACLES.md](./NO-ORACLES.md)**
 
 ### On-chain verification (with receipts)
 

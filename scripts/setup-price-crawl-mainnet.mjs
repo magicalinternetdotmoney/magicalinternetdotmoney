@@ -51,7 +51,7 @@ async function send(conn, admin, ixs, label) {
 function hookMask(count) {
   let mask = 0;
   for (let i = 0; i < count; i++) {
-    if (i === 0 || i === 2 || i === 3 || (i >= 4 && i <= 9)) mask |= (1 << i);
+    if (i === 0 || i === 2 || i === 3 || (i >= 4 && i <= 9) || i === 11) mask |= (1 << i);
   }
   return mask;
 }
@@ -138,24 +138,38 @@ async function setupPair(conn, admin, pair) {
     await send(conn, admin, ixs, "set_oracle_kind");
   }
 
-  // 5. patch hook metas — 12 embeds (add price_crawl)
+  // 4b. migrate price_crawl 423 → 519 if legacy
+  const crawlAi0 = await conn.getAccountInfo(priceCrawl, "confirmed");
+  if (crawlAi0 && crawlAi0.data.length < 519) {
+    const rentTop = Math.max(0, (await conn.getMinimumBalanceForRentExemption(519)) - crawlAi0.lamports);
+    const ixs = [web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 })];
+    if (rentTop > 0) ixs.push(web3.SystemProgram.transfer({ fromPubkey: admin.publicKey, toPubkey: priceCrawl, lamports: rentTop }));
+    ixs.push(new web3.TransactionInstruction({
+      programId: PROGRAM_PK,
+      keys: [k(admin.publicKey, true, true), k(config, false), k(priceCrawl, true), k(SYS, false)],
+      data: Buffer.from([20]),
+    }));
+    await send(conn, admin, ixs, "migrate_price_crawl");
+  }
+
+  // 5. patch hook metas — 13 embeds, 16 metas (pool/vault boxed in price_crawl)
   const receipt = new web3.PublicKey(pair.receiptMint);
   const [metaList] = web3.PublicKey.findProgramAddressSync([Buffer.from("extra-account-metas"), receipt.toBuffer()], PROGRAM_PK);
   const embeds = await txbuild.buildHookEmbeds(conn, PROGRAM, pair);
-  const count = embeds.length;
-  const mask = hookMask(count);
+  const metaCount = txbuild.hookMetaCount(embeds.length, ORACLE_CRAWL);
+  const mask = txbuild.hookWritableMask(metaCount);
   const metaAi = await conn.getAccountInfo(metaList, "confirmed");
-  const needPatch = !metaAi || metaAi.data.length !== 16 + count * 35;
+  const needPatch = !metaAi || metaAi.data.length !== 16 + metaCount * 35;
   if (needPatch) {
     const extraRent = metaAi
-      ? Math.max(0, (await conn.getMinimumBalanceForRentExemption(16 + count * 35)) - metaAi.lamports)
+      ? Math.max(0, (await conn.getMinimumBalanceForRentExemption(16 + metaCount * 35)) - metaAi.lamports)
       : 0;
     const ixs = [web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 })];
     if (extraRent > 0) ixs.push(web3.SystemProgram.transfer({ fromPubkey: admin.publicKey, toPubkey: metaList, lamports: extraRent }));
     ixs.push(new web3.TransactionInstruction({
       programId: PROGRAM_PK,
       keys: [k(admin.publicKey, true, true), k(config, false), k(metaList, true), k(receipt, false), k(SYS, false), ...embeds.map((p) => k(p, false))],
-      data: Buffer.concat([Buffer.from([19, count]), Buffer.from([mask & 0xff, (mask >> 8) & 0xff])]),
+      data: Buffer.concat([Buffer.from([19, metaCount]), Buffer.from([mask & 0xff, (mask >> 8) & 0xff])]),
     }));
     await send(conn, admin, ixs, "patch_hook_metas");
   }

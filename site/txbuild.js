@@ -39,7 +39,8 @@ const O_POOL_AB = 164, O_POOL_AQ = 196, O_POOL_BQ = 228, O_L_MAX = 268;
 const O_LOOKUP_TABLE = 316, O_ORACLE_POOL = 382, O_ORACLE_KIND = 414, O_ORACLE_PRICE_LAST = 415;
 const ORACLE_PUMPSWAP = 1;
 const ORACLE_CRAWL = 2;
-const PRICE_CRAWL_SIZE = 423;
+const PRICE_CRAWL_SIZE = 519;
+const PRICE_CRAWL_LEGACY = 423;
 const LAYOUT_CPSWAP = 1;
 const LAYOUT_PUMPSWAP = 2;
 const PUMP_SWAP_PROGRAM = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
@@ -144,14 +145,16 @@ function priceCrawlPda(programId, configPk) {
 }
 
 function parsePriceCrawl(buf) {
-  if (!buf || buf.length < PRICE_CRAWL_SIZE || buf[0] !== 1) return null;
+  if (!buf || buf.length < PRICE_CRAWL_LEGACY || buf[0] !== 1) return null;
   const cursor = buf[33];
   const pass = Number(buf.readBigUInt64LE(34));
   const numEntries = buf[42];
   const aggregateWad = buf.readBigUInt64LE(43) + (buf.readBigUInt64LE(51) << 64n);
   const layouts = [];
-  for (let i = 0; i < 12; i++) layouts.push(buf[123 + i]);
-  return { cursor, pass, numEntries, aggregateWad: aggregateWad.toString(), layouts };
+  const layoutOff = buf.length >= PRICE_CRAWL_SIZE ? 155 : 123;
+  for (let i = 0; i < 12; i++) layouts.push(buf[layoutOff + i]);
+  const hookPool = buf.length >= PRICE_CRAWL_SIZE ? rdPk(buf, 59).toBase58() : null;
+  return { cursor, pass, numEntries, aggregateWad: aggregateWad.toString(), layouts, hookPool };
 }
 
 function cpswapVaultsFromPool(conn, poolPk, baseMint, quoteMint) {
@@ -223,12 +226,21 @@ async function listPairs(conn, programId) {
 
 const CP = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
 
-function hookWritableMask(count) {
+const CRAWL_HOOK_META_COUNT = 14;
+const CRAWL_HOOK_PATCH_EMBED_COUNT = 12;
+
+function hookWritableMask(metaCount) {
   let mask = 0;
-  for (let hi = 0; hi < count; hi++) {
-    if (hi === 0 || hi === 2 || hi === 3 || (hi >= 4 && hi <= 9)) mask |= (1 << hi);
+  for (let hi = 0; hi < metaCount; hi++) {
+    if (hi === 0 || hi === 2 || hi === 3 || (hi >= 4 && hi <= 9) || hi === 11) mask |= (1 << hi);
   }
   return mask;
+}
+
+/** Meta TLV count for patch/init (boxed crawl: 12 embeds → 14 resolved metas). */
+function hookMetaCount(embedCount, oracleKind) {
+  if (oracleKind === ORACLE_CRAWL && embedCount === CRAWL_HOOK_PATCH_EMBED_COUNT) return CRAWL_HOOK_META_COUNT;
+  return embedCount;
 }
 
 function pumpswapVaultsFromPoolData(buf) {
@@ -262,6 +274,10 @@ async function buildHookEmbeds(conn, programId, pair) {
   }
   if (d && d.length >= CONFIG_SIZE && d[O_ORACLE_KIND] === ORACLE_CRAWL) {
     const [crawl] = priceCrawlPda(programId, config.toBase58());
+    const crawlAi = await conn.getAccountInfo(crawl, "confirmed");
+    const parsed = parsePriceCrawl(crawlAi && crawlAi.data);
+    if (!parsed || !parsed.numEntries) throw new Error("price_crawl not initialized");
+    // reserve vault pubkeys in price_crawl box; hook metas 12–13 resolve via disc-2.
     embeds.push(crawl);
   }
   return embeds;
@@ -704,10 +720,15 @@ async function buildInitHookMetas(conn, { programId, user, pair }) {
     return { tx: null, metaList: metaList.toBase58(), skipped: true };
   }
   const embeds = await buildHookEmbeds(conn, programId, pair);
-  const hookCount = embeds.length;
-  if (hookCount < 11 || hookCount > 16) throw new Error("unexpected hook embed count: " + hookCount);
-  const hookMask = hookWritableMask(hookCount);
-  const metaRent = BigInt(await conn.getMinimumBalanceForRentExemption(16 + hookCount * 35));
+  const embedCount = embeds.length;
+  if (embedCount < 10 || embedCount > CRAWL_HOOK_PATCH_EMBED_COUNT) {
+    throw new Error("unexpected hook embed count: " + embedCount);
+  }
+  const cfgAi = await conn.getAccountInfo(config, "confirmed");
+  const oracleKind = cfgAi && cfgAi.data && cfgAi.data.length >= CONFIG_SIZE ? cfgAi.data[O_ORACLE_KIND] : 0;
+  const metaCount = hookMetaCount(embedCount, oracleKind);
+  const hookMask = hookWritableMask(metaCount);
+  const metaRent = BigInt(await conn.getMinimumBalanceForRentExemption(16 + metaCount * 35));
   const ixs = [
     ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
     new TransactionInstruction({
@@ -719,7 +740,7 @@ async function buildInitHookMetas(conn, { programId, user, pair }) {
       data: Buffer.concat([
         Buffer.from([7]),
         u64(metaRent),
-        Buffer.from([hookCount]),
+        Buffer.from([metaCount]),
         Buffer.from([hookMask & 0xff, (hookMask >> 8) & 0xff]),
         Buffer.from([metaBump]),
       ]),
@@ -734,4 +755,5 @@ module.exports = {
   loadPairFromReceipt, listPairs, findIncompletePairs, hookMetaExists, hookVaults, buildHookEmbeds,
   mintHasMetadata, readMintMeta, canonicalPairMeta, pairLeverage,
   ORACLE_CRAWL, LAYOUT_CPSWAP, LAYOUT_PUMPSWAP,
+  CRAWL_HOOK_META_COUNT, CRAWL_HOOK_PATCH_EMBED_COUNT, hookMetaCount, hookWritableMask,
 };

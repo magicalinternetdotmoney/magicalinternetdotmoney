@@ -1,0 +1,1294 @@
+{
+  "startedAt": "2026-06-21T13:26:59.027Z",
+  "program": "J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe",
+  "admin": "CnkHq3wRSsegjpJJvvRWb1uiCJvPMAYW6b7P1Yq8FpCT",
+  "test": "E8dJrFHJqU5YKXJihaJxfGAPp7xf5UbEaWZbCEzgLqUX",
+  "usdcFraction": 5,
+  "transfersPerPair": 25,
+  "pairs": [
+    {
+      "sym": "CQzeyuxa",
+      "receiptMint": "CQzeyuxa3cUPjQd2MagKGtQhCb8jgzHverFsCC9aehnM",
+      "config": "RL5gHMg4UxYtvpJz1Nr2xtv8nEhUqwNtwEnS4U64jDP",
+      "transfers": [
+        {
+          "n": 1,
+          "label": "admin→test",
+          "sig": "23AwSqezmQNvziMeJ9RgnLWcp27mZUukYsh8DrXjynZhfNMsWjdiinnxQT6JoiNM4cRD3kU6aZT4K6K7mjNDCyJr",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=4 sample_wad=326535874221 agg_wad=326535874221 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=0 now=326535874221 new_oracle=97960762266 mkt_ratio=165629448327 new_ratio=49689534498 plan=none"
+          ]
+        },
+        {
+          "n": 2,
+          "label": "test→admin",
+          "sig": "5LWTHokgKPH17UgxgFiSSR5tiaepuNv8S4V3Fsh2xMiibjioy2Cbo4Sv9iJ3fUfU2cKkRPzraLrhiewgmb9KwCwu",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=5 sample_wad=326535874221 agg_wad=326535874221 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=0 mint_usdc=0",
+            "rb oracle kind=2 hook=1 last=97960762266 now=326535874221 new_oracle=166533295852 mkt_ratio=165629448327 new_ratio=84471508646"
+          ]
+        },
+        {
+          "n": 3,
+          "label": "admin→test",
+          "sig": "4EpznWyMoHJZvjNDKW3hcJFcSd3gVRCQBqBMZx9iF2ZuQRTWnVQ34hC8MBLqSVXpnLQLdN8sR6YBhLKQwXVRouvA",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=6 sample_wad=326535874221 agg_wad=326535874221 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=0 mint_usdc=0",
+            "rb oracle kind=2 hook=1 last=166533295852 now=326535874221 new_oracle=214534069362 mkt_ratio=165629448327 new_ratio=108818890550"
+          ]
+        },
+        {
+          "n": 4,
+          "label": "test→admin",
+          "sig": "5YkqZEZ4PkUzmbvmyYYxvLxLEf2NKrZHG2UHabxgvajU66iB1L2e1Y6ZdwJu1MMigxbbnXrhrWmx4GmJbAgyZqUA",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 5,
+          "label": "admin→test",
+          "sig": "3uKvRWXUM5EGio599Dkviq5JpvP4WNZzBaJdvhjWu2AeuBRp85FgwruiZdVUVTk5TwW9sZ6NmRywX23aw1x5pBV",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=8 sample_wad=326535874221 agg_wad=326535874221 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=3548774 mint_usdc=3388675",
+            "rb oracle kind=2 hook=1 last=248134610819 now=326535874221 new_oracle=271654989839 mkt_ratio=165629448327 new_ratio=137792275016"
+          ]
+        },
+        {
+          "n": 6,
+          "label": "test→admin",
+          "sig": "4mcmTJknxkiZavARxCV5sGH7ivaebnFrmpPdEUqjYsncCeoYdq8tx9XM9eWtp4Z6hxRVyUodcbMCv96rVcwX2Tpj",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 7,
+          "label": "admin→test",
+          "sig": "4SfuHTQzUc72BUwuqzDuz9zbB2fHr1KLRaGp3yjrzQhgWt9hHuZrXvzJPhT1h4R2qzb21Lxoe6u1cwzRbo5TVchE",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=10 sample_wad=332498853349 agg_wad=332498853349 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=4077498 mint_usdc=3852179",
+            "rb oracle kind=2 hook=1 last=288463713121 now=332498853349 new_oracle=301674255189 mkt_ratio=182850061181 new_ratio=158934467723"
+          ]
+        },
+        {
+          "n": 8,
+          "label": "test→admin",
+          "sig": "53HRozTiA3NGoWtSJXUbpMVdVMb8SmVTUUNUseGVDnEUifwgTaTs5Fh16kvTB7fVppqDs6dx3jDxAoshDd8H38VA",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=11 sample_wad=333561321324 agg_wad=333561321324 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=4385111 mint_usdc=4110155",
+            "rb oracle kind=2 hook=1 last=301674255189 now=333561321324 new_oracle=311240375029 mkt_ratio=190647173806 new_ratio=168448279547"
+          ]
+        },
+        {
+          "n": 9,
+          "label": "admin→test",
+          "sig": "25efCcBSuudS7j52gFZBYGwAAstQ7uoK8CeAiHWvGeum6dEm9jxoymgvkPFW9Vti6WcAkMJqh6zScE5dHQSK4hwq",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=12 sample_wad=333002789331 agg_wad=333002789331 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=4674426 mint_usdc=4406155",
+            "rb oracle kind=2 hook=1 last=311240375029 now=333002789331 new_oracle=317769099319 mkt_ratio=201158522107 new_ratio=178261352315"
+          ]
+        },
+        {
+          "n": 10,
+          "label": "test→admin",
+          "sig": "5zXFS7W791aLzVpQjDE92igjHow7rQXe9CMGjUVtxtoNGEKQgqEGKwLN648MFwBYgbnpSoXoNVr2CJTUUVpPts8k",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=13 sample_wad=332800385622 agg_wad=332800385622 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=5034617 mint_usdc=4730845",
+            "rb oracle kind=2 hook=1 last=317769099319 now=332800385622 new_oracle=322278485209 mkt_ratio=211424669739 new_ratio=188210347542"
+          ]
+        },
+        {
+          "n": 11,
+          "label": "admin→test",
+          "sig": "2Hvgv9rtuZoi75c3J8mQjRL5oiCDn4annqs3CMNHPudiokqezyYCWxmsiy1hTmkAPMgjTitPGiSLhdtnGiMPNec2",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=14 sample_wad=337638619054 agg_wad=337638619054 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=5416927 mint_usdc=5067387",
+            "rb oracle kind=2 hook=1 last=322278485209 now=337638619054 new_oracle=326886525362 mkt_ratio=224980347591 new_ratio=199241347556"
+          ]
+        },
+        {
+          "n": 12,
+          "label": "test→admin",
+          "sig": "2Spj9kSWa9DLCX9y8Q9fJX6epcmrh2z9efB9fSn58kY1ofZq3g9hRcNgBa6nmsdZZfE2mRGVFmHRj3Z3nxW9LvyE",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=15 sample_wad=341229295688 agg_wad=341229295688 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=5799754 mint_usdc=5416725",
+            "rb oracle kind=2 hook=1 last=326886525362 now=341229295688 new_oracle=331189356459 mkt_ratio=238003860970 new_ratio=210870101580"
+          ]
+        },
+        {
+          "n": 13,
+          "label": "admin→test",
+          "sig": "66jro7mhiBF1tvDoEYfhvr8FfziXvhyFqj4HmCuyPuk561yGgzuh4HPi8zccwwJ7iRvmywUNUGV4GSMqijmeGFki",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=16 sample_wad=344670342454 agg_wad=344670342454 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=6219605 mint_usdc=5786736",
+            "rb oracle kind=2 hook=1 last=331189356459 now=344670342454 new_oracle=335233652257 mkt_ratio=251250012000 new_ratio=222984074706"
+          ]
+        },
+        {
+          "n": 14,
+          "label": "test→admin",
+          "sig": "51hhqMH4snks4nSYGxUKC2MFGSdCpRnDnPxiVqtskRtbc9S2Q28vtxBrvD9bHphx4Cf32Z5rHgj8oh36KFuYuyci",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=17 sample_wad=346497932707 agg_wad=346497932707 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=6718207 mint_usdc=6203439",
+            "rb oracle kind=2 hook=1 last=335233652257 now=346497932707 new_oracle=338612936392 mkt_ratio=265043728304 new_ratio=235601970785"
+          ]
+        },
+        {
+          "n": 15,
+          "label": "admin→test",
+          "sig": "5W2qJMnSgF9kX8Y7F2c7fF4UmRuynhfttSvfaFgKofLLU1ZTk7qkd7USmmZwcPhyh5jxfsbgzCXpGZdwbJNG5wsk",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 16,
+          "label": "test→admin",
+          "sig": "2bLDtr2fuixHSwpqRUp15pYrYnf6AvuFJEjNJisCKb4N2dce59voSYugYSpR6SvAEaGmLEBvgnUYuGqbcZ4MuQJm",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=19 sample_wad=353765918302 agg_wad=353765918302 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=7747699 mint_usdc=7133726",
+            "rb oracle kind=2 hook=1 last=342204698947 now=353765918302 new_oracle=345673064753 mkt_ratio=299457153771 new_ratio=263866853276"
+          ]
+        },
+        {
+          "n": 17,
+          "label": "admin→test",
+          "sig": "3cNe2kx9GKv76CvSNto6B1DdYhfsmWWWf7zWtpPZY9uuVhLs1vNowFnTX7WjgtZzs2Vh1qxDqMDJzJPPGYwBRWVw",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=20 sample_wad=353577509040 agg_wad=353577509040 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=8369568 mint_usdc=7671145",
+            "rb oracle kind=2 hook=1 last=345673064753 now=353577509040 new_oracle=348044398039 mkt_ratio=315647656334 new_ratio=279401094193"
+          ]
+        },
+        {
+          "n": 18,
+          "label": "test→admin",
+          "sig": "2XV3ovhFAeEha7nerJYZhtsSvHRLdrpcdik6ZEoQbdwL5C2T6w5cWMEgziLxUswtJFLKERRrX6CfDc8WS8qyJUkR",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 19,
+          "label": "admin→test",
+          "sig": "drr4QSy8fdoBaxysMJhJwJdqPyQgcb5DwAPcC2sVdp3hanDzcb39CwNYJGtB8CExF3PpP7Zk5ikgJbMkZ9xF4Zw",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=22 sample_wad=353562445808 agg_wad=353562445808 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=3652858 mint_usdc=3344601",
+            "rb oracle kind=2 hook=1 last=352022105709 now=353562445808 new_oracle=352484207738 mkt_ratio=355627264649 new_ratio=314568169737"
+          ]
+        },
+        {
+          "n": 20,
+          "label": "test→admin",
+          "sig": "2MQ1AbpJZkn82uc5jtUHzqeNuvCPWzBd6ZmNd4E6bVsqUrhn2kBkpL6UGkdETi9hoLRLTRG8cdWZjVhzvpwCd5KL",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=23 sample_wad=351469377153 agg_wad=351469377153 slot=0",
+          "rb": [
+            "rb plan side=0 mint_pair=10088 mint_usdc=7790",
+            "rb oracle kind=2 hook=1 last=352484207738 now=351469377153 new_oracle=352179758563 mkt_ratio=362625419076 new_ratio=328985344538"
+          ]
+        },
+        {
+          "n": 21,
+          "label": "admin→test",
+          "sig": "4FjCUmoUAT1jVpFoC1PXYxo7HudcqpER9yq38SBKLpmq6XTbgT4vhUqVZ2Z7pToV1hm3mH9gxQAPBJ15fCj7GQK2",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 22,
+          "label": "test→admin",
+          "sig": "41TVGnnDT1b3znk5LReCZQAnCsZasxwTpk6SWXCfSgoHwonnJR7JoC4Puoisa5PmgsRgsqe3Bvv3tndQpMqi4dZx",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 23,
+          "label": "admin→test",
+          "sig": "3dA42UkEz6q7khqBWECN8cwsaDMcCy9zzys71rBSYCxrGGVm53eLNVcVcn72rus7vU6BmJoMCMyQY3N95p5tamdT",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=26 sample_wad=317154047173 agg_wad=317154047173 slot=0",
+          "rb": [
+            "rb plan side=0 mint_pair=32162 mint_usdc=24347",
+            "rb oracle kind=2 hook=1 last=344770299885 now=317154047173 new_oracle=336485424072 mkt_ratio=322823488121 new_ratio=333580252125"
+          ]
+        },
+        {
+          "n": 24,
+          "label": "test→admin",
+          "sig": "2zpHCM4FeHsvGK4SqoStb5QaQ6Mg2SXgVpFKuoSo5RtXqYctGopvSdTHmhVot8WzLwQe3dVw91GoJRQNt2sHLzJt",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 25,
+          "label": "admin→test",
+          "sig": "62xeMtrn616vFbeQ98XEnzgrq5uH5K3P9xob3TyakstfKJhAKG4pqcQLvbpiTUMkakaw8iBjn9fjEG7EwkD67v5t",
+          "crawl": null,
+          "rb": []
+        }
+      ],
+      "errors": [],
+      "before": {
+        "crawl": {
+          "cursor": 0,
+          "pass": 2,
+          "numEntries": 1,
+          "aggregateWad": "326616655411",
+          "layouts": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "hookPool": "11111111111111111111111111111111"
+        },
+        "oracleLast": "0",
+        "oracleKind": 0
+      },
+      "patchSig": "2Gmn5KtweVYDxZkFwHkcGzjxbwLHjAXw6B5A2Gbfbpf7soUbSKPSS691BqzQW63WxYno99vgEx8gBcWWGxcPB2Sh",
+      "seedSig": "2YUFxKecN4tvEMqT1zxBmFiaCntJcDDvZWfRYQUbMKjFvcZ9rEAdkvbQjMBzhE9PmHBmm9U5jFc5Uiv7XV6kgzEk",
+      "depositSig": "21bCWxtjX93vFXka66rzhtFMfJPyLKa3Kit6fKp7BQF1tbRRZYMKw3aX5CNBqfyBBB7UmPqkf7P36EkCWsPm1hNm",
+      "receiptMinted": "15003656",
+      "after": {
+        "crawl": {
+          "cursor": 0,
+          "pass": 28,
+          "numEntries": 1,
+          "aggregateWad": "286953061339",
+          "layouts": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "hookPool": "11111111111111111111111111111111"
+        },
+        "oracleLast": "314661999071",
+        "oracleKind": 0
+      },
+      "transferCount": 25,
+      "crawlPassDelta": 26,
+      "hookCrawlLogs": 17,
+      "rbMintLogs": 16
+    },
+    {
+      "sym": "2P7Aibym",
+      "receiptMint": "2P7AibymfoondMnceAQzH7iJuiHjDpSmDP3UiYh1pTvB",
+      "config": "29qqvBtAGW9VzunMZGSMU2qyQvTzskH2PXhpFQJyTz8x",
+      "transfers": [
+        {
+          "n": 1,
+          "label": "admin→test",
+          "sig": "2gqnE1AhrmmKpp58qmE3RReauwnR2zjyqeb4aTKrat8NwTCHz38k2MfAXZcYU78YyoaCQxyGJ3DBoiuaCqz972QT",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=41 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552330656 now=291552595320 new_oracle=291552410055 mkt_ratio=380033527874 new_ratio=379899369274 plan=none"
+          ]
+        },
+        {
+          "n": 2,
+          "label": "test→admin",
+          "sig": "2ix2qZ2Lhn41S9AUGDevooBoZUmT9REdAmQJiiK2W8uUGV7iL8Zsv9KuG5B2Hp56untTNCmwftWgZhLKRTF9suUC",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=42 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552410055 now=291552595320 new_oracle=291552465634 mkt_ratio=380033527874 new_ratio=379939616854 plan=none"
+          ]
+        },
+        {
+          "n": 3,
+          "label": "admin→test",
+          "sig": "5cPwuaE8K2iprjsNpRawANQZHZoRkTdGM95XrayYkjP7NKzATa9aZZQQupFLAi8Z1TxzGJskL6omvo3MmYFEhcM7",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=43 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552465634 now=291552595320 new_oracle=291552504539 mkt_ratio=380033527874 new_ratio=379967790160 plan=none"
+          ]
+        },
+        {
+          "n": 4,
+          "label": "test→admin",
+          "sig": "47ZhFmKtJxfZxaSLGWaiCYWprWp3KJZtWaPmfqdpeV3dN8wJRqC8f1dC1GU4ydFPm3B85FFdNCfWdNJsok5QvB3p",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=44 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552504539 now=291552595320 new_oracle=291552531773 mkt_ratio=380033527874 new_ratio=379987511474 plan=none"
+          ]
+        },
+        {
+          "n": 5,
+          "label": "admin→test",
+          "sig": "5groqXjS8bJZFLMgzagF7FT3Jj2Up9nU7sVdMywZoRCgsPVMEYKgNDqXq97DjXUjfjbGqC3n4pifwZatcca1DdFG",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=45 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552531773 now=291552595320 new_oracle=291552550837 mkt_ratio=380033527874 new_ratio=380001316394 plan=none"
+          ]
+        },
+        {
+          "n": 6,
+          "label": "test→admin",
+          "sig": "4MDALEHPfL3rUhngwSKx1SkzVZnPP3hBYKRaEJztGfurXDBu1CdHKTbgsc2VTB5UTp6Zz7G4nkiGpRxJ5uvY8PSV",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=46 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552550837 now=291552595320 new_oracle=291552564181 mkt_ratio=380033527874 new_ratio=380010979838 plan=none"
+          ]
+        },
+        {
+          "n": 7,
+          "label": "admin→test",
+          "sig": "5HHMGtAxeXoLUtvXMkHHevU1Nxq2fbRtxZ5AAv4m6JtZk56gLcG9aJTBtY8hft1Ar67bof9u3DVAvPcBs3SNdTBA",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=47 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552564181 now=291552595320 new_oracle=291552573522 mkt_ratio=380033527874 new_ratio=380017744248 plan=none"
+          ]
+        },
+        {
+          "n": 8,
+          "label": "test→admin",
+          "sig": "nSKzsJXCD3VBjZ1tzyu6vNuYZXtXH2qJU6UNbu52iuG1e5AYTXvAWRSd5Q6yYLuF6i5o9TWxN61JFCByLCgH7ew",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=48 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552573522 now=291552595320 new_oracle=291552580061 mkt_ratio=380033527874 new_ratio=380022479335 plan=none"
+          ]
+        },
+        {
+          "n": 9,
+          "label": "admin→test",
+          "sig": "3QEerNx7ogU8hfXwcMDVnxGWFcAmDdkDSWuCxXmKqbSHGM2SAJGnjUxZgeSTot3yEZVw99ecWjWxaxPE7LALocLM",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=49 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552580061 now=291552595320 new_oracle=291552584638 mkt_ratio=380033527874 new_ratio=380025793896 plan=none"
+          ]
+        },
+        {
+          "n": 10,
+          "label": "test→admin",
+          "sig": "2F1TU3qhf4ccms5yaxTsjddATRPNCA91A21XdWkTsz7hjtbrmNXyeH7vDoWQMGosgSNVHq9WyS8XhsoGjGzwpaBA",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=50 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552584638 now=291552595320 new_oracle=291552587842 mkt_ratio=380033527874 new_ratio=380028114089 plan=none"
+          ]
+        },
+        {
+          "n": 11,
+          "label": "admin→test",
+          "sig": "4d1XEEuHEd6yoHNK68qpeEKkE8mQXpHr4Xqyi9ciAzkZdkgS2xmsCVaWkukX8zt8YygiFmNZiJeKFvFCE3Vhv4ru",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=51 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552587842 now=291552595320 new_oracle=291552590085 mkt_ratio=380033527874 new_ratio=380029738224 plan=none"
+          ]
+        },
+        {
+          "n": 12,
+          "label": "test→admin",
+          "sig": "4vYeZe9FHW4qqkBhb8DbxeacV6WAjjYxmYYuK9cEtjNDSwjR1DTqPkAJYgvN4CY7ZLdrsxKvCbvkfvJmsUCYbcFJ",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=52 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552590085 now=291552595320 new_oracle=291552591655 mkt_ratio=380033527874 new_ratio=380030875119 plan=none"
+          ]
+        },
+        {
+          "n": 13,
+          "label": "admin→test",
+          "sig": "2kV2su7XVGLU3QgTGKZ8BH2bW75Rv3GJxd8ep3L9uaoSo8E1RFtmHFdKvsjJePNfTRLEQFagAmSg3jcqiMMiMRNu",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=53 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552591655 now=291552595320 new_oracle=291552592754 mkt_ratio=380033527874 new_ratio=380031670945 plan=none"
+          ]
+        },
+        {
+          "n": 14,
+          "label": "test→admin",
+          "sig": "2g6TXjxiKKCQ2T1SwmSzwpTjxHEvmJizRkyPDSWGTBXja8eC1GMw1iJmvcakoSnT93QeAiNSDotwcRwZyN4x9MLY",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=54 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552592754 now=291552595320 new_oracle=291552593523 mkt_ratio=380033527874 new_ratio=380032228023 plan=none"
+          ]
+        },
+        {
+          "n": 15,
+          "label": "admin→test",
+          "sig": "egRMN43JTdbbrZcZ5nqpfHXSowE4NNJE9AS61WsQzPyBaXWigPYkd3KBVryUitcZNtzAJc7azeBAWpDM8RvpM4W",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=55 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552593523 now=291552595320 new_oracle=291552594062 mkt_ratio=380033527874 new_ratio=380032617978 plan=none"
+          ]
+        },
+        {
+          "n": 16,
+          "label": "test→admin",
+          "sig": "SmBRnCjh8kdj33CZCtAfpTZ2dN8mRHu3NLY3hf6MnZwH3M1yzAH1fjgK7njtsEXF3vX3BbCzAnYBzfm2ArZ7eGa",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=56 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552594062 now=291552595320 new_oracle=291552594439 mkt_ratio=380033527874 new_ratio=380032890946 plan=none"
+          ]
+        },
+        {
+          "n": 17,
+          "label": "admin→test",
+          "sig": "58nV51SnhJPCvKkivf5QeRKC2fkg5xtmQYynDuCwNi4eCBTiCSGS5JZ82xhw4E65nVGsEA1VcN8eL1KTFUP83z8r",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 18,
+          "label": "test→admin",
+          "sig": "4DmevcZBsdgzv4LDnSpxuBGobYVE97jLLrzryX32osKiURheh7nDmsnDHMFuzG3opvUgHn58NsukhQ26dC5HpRPH",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=58 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552594703 now=291552595320 new_oracle=291552594888 mkt_ratio=380033527874 new_ratio=380033215779 plan=none"
+          ]
+        },
+        {
+          "n": 19,
+          "label": "admin→test",
+          "sig": "zwsxnkMcs7tjjbW8Ccn4nGZseEKLNtMiFrrrZRyT223pasDF2o9Cfopn2MRt7wYZPV3c1cFtQNgxDnmNaHAj39F",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=59 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552594888 now=291552595320 new_oracle=291552595017 mkt_ratio=380033527874 new_ratio=380033309407 plan=none"
+          ]
+        },
+        {
+          "n": 20,
+          "label": "test→admin",
+          "sig": "3EufJLPiRan8afE8SgvPbbokBR8LSM6W8yunj479DJ6zp2Rz4brFFtoeYN7swfmvQhAofdi76cP7FJMkQEqtjuPx",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=60 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552595017 now=291552595320 new_oracle=291552595107 mkt_ratio=380033527874 new_ratio=380033374947 plan=none"
+          ]
+        },
+        {
+          "n": 21,
+          "label": "admin→test",
+          "sig": "4Ft8Wuw8jvsyTJn124oYDwqenVv2e3oRmqiVDrrgo5VmDFJMX1E72J6HH1Bp1NsBnwtjZkhdzYNZLajuWBEtB4k2",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=61 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552595107 now=291552595320 new_oracle=291552595170 mkt_ratio=380033527874 new_ratio=380033420825 plan=none"
+          ]
+        },
+        {
+          "n": 22,
+          "label": "test→admin",
+          "sig": "5oTNKrHSFJo311wmYzeDFGYtLf7wGy5R8v4PFjFMgB2M6jigsvAvduGMCSDX57AcUUyMxnx5y4ktzFs45dM7Vktm",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 23,
+          "label": "admin→test",
+          "sig": "2y47v24wxwxGp2Bw7ZPjbe2TMR7vWZGZGpPqhB4pXoPYZvPS9BEjw8APBte3CGrDSxQKiHc8NLPjAJFuqci6KBhK",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=63 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552595215 now=291552595320 new_oracle=291552595246 mkt_ratio=380033527874 new_ratio=380033475419 plan=none"
+          ]
+        },
+        {
+          "n": 24,
+          "label": "test→admin",
+          "sig": "2hyBF2bREqN2MujWtYugZnWZn3baC5Tw4oPnJCM8hhtoeMWGLo817ENq7xiACFSt98mvaS2nnaSNvscf5rHXRrdZ",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=64 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552595246 now=291552595320 new_oracle=291552595268 mkt_ratio=380033527874 new_ratio=380033491155 plan=none"
+          ]
+        },
+        {
+          "n": 25,
+          "label": "admin→test",
+          "sig": "65gsCj4pL8u1JUuUkm162LJasR3PQAyx953Aj6UYw4umqYobQZGkUscRMMpGaVTycCRBTJrU4kohD7J9umXoadms",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=65 sample_wad=291552595320 agg_wad=291552595320 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=291552595268 now=291552595320 new_oracle=291552595283 mkt_ratio=380033527874 new_ratio=380033502170 plan=none"
+          ]
+        }
+      ],
+      "errors": [],
+      "before": {
+        "crawl": {
+          "cursor": 0,
+          "pass": 39,
+          "numEntries": 1,
+          "aggregateWad": "291552595320",
+          "layouts": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "hookPool": "11111111111111111111111111111111"
+        },
+        "oracleLast": "291552330656",
+        "oracleKind": 0
+      },
+      "patchSig": "43hjTu6P8ie12cakFotmVEmEQkMfbyycEgmSeSwhaUNCkNi13m6xUGGicQnnuBMCKiD1rJzPng9jhM9mLTceaKYf",
+      "seedSig": "3TAWpHTH2G8YtMwZsVvcbdtWxi4RXWbY56LAG6oTomz6bGzTSgJAvTE3Aj8sBQp59rzysZmuViXaZFiJqLQTh5GG",
+      "depositSkipped": "already has receipts",
+      "existingReceipts": "22907333",
+      "after": {
+        "crawl": {
+          "cursor": 0,
+          "pass": 65,
+          "numEntries": 1,
+          "aggregateWad": "291552595320",
+          "layouts": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "hookPool": "11111111111111111111111111111111"
+        },
+        "oracleLast": "291552595283",
+        "oracleKind": 0
+      },
+      "transferCount": 25,
+      "crawlPassDelta": 26,
+      "hookCrawlLogs": 23,
+      "rbMintLogs": 0
+    },
+    {
+      "receiptMint": "2X5XkVTKbxZye87Xw8iu4uuCFjV7uqkQ9jBXG8GpWgWk",
+      "skipped": true
+    },
+    {
+      "sym": "EJf2gAc6",
+      "receiptMint": "EJf2gAc6QtNLd5nhq97GxMDxFXTULEPbWHKTaUzr8KVG",
+      "config": "CrEBEzPvbTmKN1ga7hkXZciQYBU59Dycx8LpiyFjb547",
+      "transfers": [
+        {
+          "n": 1,
+          "label": "admin→test",
+          "sig": "3PPr1QurjeKn7RgQhjwKrZytkwaARYjjmDUzmawm7JMpSswdYKv59LvR6av4WafYxKL8XF6xDHt4CnXgx21gNWRD",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=4 sample_wad=517574919642857 agg_wad=517574919642857 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=0 now=517574919642857 new_oracle=155272475892857 mkt_ratio=81438030532727 new_ratio=74710245650316 plan=none"
+          ]
+        },
+        {
+          "n": 2,
+          "label": "test→admin",
+          "sig": "Jpr2wweseJZAMXh1AKHi7jorUzqSqfBFLKv6E59BpoLQokDxxgYskgBmJHv5GBK1dVdVfUyhyLV4zwpRJfcTsSF",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=5 sample_wad=517574919642857 agg_wad=517574919642857 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=0 mint_usdc=0",
+            "rb oracle kind=2 hook=1 last=155272475892857 now=517574919642857 new_oracle=263963209017857 mkt_ratio=81438030532727 new_ratio=76728581115039"
+          ]
+        },
+        {
+          "n": 3,
+          "label": "admin→test",
+          "sig": "3BFuR8ubBXWcdRKWsPsURW8ywRogR7ZsJ7QrpKiszSSaV2c5WowGg9Rne4GKrwmLGURfb3CA6qGK8xEYaP23Bn7D",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=6 sample_wad=517574919642857 agg_wad=517574919642857 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=0 mint_usdc=0",
+            "rb oracle kind=2 hook=1 last=263963209017857 now=517574919642857 new_oracle=340046722205357 mkt_ratio=81438030532727 new_ratio=78141415940345"
+          ]
+        },
+        {
+          "n": 4,
+          "label": "test→admin",
+          "sig": "5LKzx2DWSPaP9kaQ9kBtfUurE9o3TzwyWQvAGRDXTMPQuZ7SirmLKukhoHank828qmJD8Lo5KrGzhzNfxb5nT7bP",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=7 sample_wad=517574919642857 agg_wad=517574919642857 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=0 mint_usdc=0",
+            "rb oracle kind=2 hook=1 last=340046722205357 now=517574919642857 new_oracle=393305181436607 mkt_ratio=81438030532727 new_ratio=79130400318059"
+          ]
+        },
+        {
+          "n": 5,
+          "label": "admin→test",
+          "sig": "4tmVh4vM1JfhKpa6zwG86jcjsgocPB7hWW7f96p9Vnr4SeDFAWvzxWuAVv3uYwjU29EYzWpqPrynVFVsRXp1FY3m",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=8 sample_wad=517574919642857 agg_wad=517574919642857 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=4412429 mint_usdc=1872577",
+            "rb oracle kind=2 hook=1 last=393305181436607 now=517574919642857 new_oracle=430586102898482 mkt_ratio=81438030532727 new_ratio=79822689382459"
+          ]
+        },
+        {
+          "n": 6,
+          "label": "test→admin",
+          "sig": "5jLpGnxe7BUKWLx4QxXeXGgkWhH5AaecPuix1zocWbmcHqfMhGBN4TbhWCj7bxTwboQPYAA1qDhCPXihy3nnPd5j",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=9 sample_wad=517574919642857 agg_wad=517574919642857 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=4773825 mint_usdc=1977070",
+            "rb oracle kind=2 hook=1 last=430586102898482 now=517574919642857 new_oracle=456682747921794 mkt_ratio=83083614610805 new_ratio=80800966950962"
+          ]
+        },
+        {
+          "n": 7,
+          "label": "admin→test",
+          "sig": "23NLaC8zhK8kNsmg6gaDigPwkxGomArEK5KgdHfNXhYTJKQaNyoYDPjBULmiHgSiGzvXc4qFBBbXQc5YR3MAaiod",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=10 sample_wad=517574919642857 agg_wad=517574919642857 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=5174805 mint_usdc=2088074",
+            "rb oracle kind=2 hook=1 last=456682747921794 now=517574919642857 new_oracle=474950399438112 mkt_ratio=84545597956673 new_ratio=81924356252675"
+          ]
+        },
+        {
+          "n": 8,
+          "label": "test→admin",
+          "sig": "4BpZpRLywBnAKkbNiDj7cMzh1h4cpw5Eu3VUJyfdWZKnJm1MNw3n67kMwWAtpYXhNG4jRSZbu4DokSegaa7diDhU",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=11 sample_wad=517574919642857 agg_wad=517574919642857 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=5612977 mint_usdc=2204557",
+            "rb oracle kind=2 hook=1 last=474950399438112 now=517574919642857 new_oracle=487737755499535 mkt_ratio=85931215626819 new_ratio=83126414064918"
+          ]
+        },
+        {
+          "n": 9,
+          "label": "admin→test",
+          "sig": "2mqaPjRKmshvGAXb79EK6s2opFDH3iMvjUimgddJmzAQiL3bNqYUvd4BLx7k4opDT4NF5LsFqYgzpqiGyuxHhQU8",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=12 sample_wad=517574919642857 agg_wad=517574919642857 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=6092071 mint_usdc=2335547",
+            "rb oracle kind=2 hook=1 last=487737755499535 now=517574919642857 new_oracle=496688904742531 mkt_ratio=87898269028142 new_ratio=84557970553885"
+          ]
+        },
+        {
+          "n": 10,
+          "label": "test→admin",
+          "sig": "3BU9c5xdhMeonRFSw7SSa2TryWQBqz3B3SDkqxxPFRS6ihoxhssSpWgjHf557Xbkf7HB21kErKKLVAnRivFcpkXg",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=13 sample_wad=567071878504672 agg_wad=567071878504672 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=6460364 mint_usdc=2486189",
+            "rb oracle kind=2 hook=1 last=496688904742531 now=567071878504672 new_oracle=517803796871173 mkt_ratio=100720939329379 new_ratio=89406861186533"
+          ]
+        },
+        {
+          "n": 11,
+          "label": "admin→test",
+          "sig": "wtcGnxwSY8M3nAfywiX4WY2PQxWfGHe29bsiWp7p4S8MamrBgtahj7oRyHNq9CRVzqiLpsM79VRsgVu3h3z4PtY",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 12,
+          "label": "test→admin",
+          "sig": "2uRPzYUa36Chu5EhrYb5U126q8UYNgcDu5YZ4N1EeK3V6sHyMGiDBryUdGhdUvdxwyMfwqR9wJ2CiQo8MoF6Ytsa",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=15 sample_wad=567071878504672 agg_wad=567071878504672 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=7618306 mint_usdc=2786203",
+            "rb oracle kind=2 hook=1 last=532584221361222 now=567071878504672 new_oracle=542930518504257 mkt_ratio=105140705153713 new_ratio=96935356480658"
+          ]
+        },
+        {
+          "n": 13,
+          "label": "admin→test",
+          "sig": "LPXmAsEgzzUutPAFGQ2ruR3LAfy69fuY3o8sX4i96x7vZwjjVWwiT9EXUcs1KCpz1DB2Pw6U7dfFapoiPS16Vp6",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=16 sample_wad=611966139158576 agg_wad=611966139158576 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=8133862 mint_usdc=2964537",
+            "rb oracle kind=2 hook=1 last=542930518504257 now=611966139158576 new_oracle=563641204700552 mkt_ratio=118078415830332 new_ratio=103278274285560"
+          ]
+        },
+        {
+          "n": 14,
+          "label": "test→admin",
+          "sig": "2DojzFAXPGNePBPgqbLXxuEC9171FaJuNA13EaP1M4CBNpri5pqnUaEeDtFsvwFMaqsDkSNyr5hhMH3rmr43yU6Q",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=17 sample_wad=611966139158576 agg_wad=611966139158576 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=8849075 mint_usdc=3150807",
+            "rb oracle kind=2 hook=1 last=563641204700552 now=611966139158576 new_oracle=578138685037959 mkt_ratio=121327752190047 new_ratio=108693117656906"
+          ]
+        },
+        {
+          "n": 15,
+          "label": "admin→test",
+          "sig": "4EqFAV8eDCpp81coLeeWqaURNhxA753ENhiF5u792Jy1vTA4hnkfn3vRtNpQoJg9E7nEodCGLKXckTKkWqgbxUxk",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=18 sample_wad=611966139158576 agg_wad=611966139158576 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=9621000 mint_usdc=3338580",
+            "rb oracle kind=2 hook=1 last=578138685037959 now=611966139158576 new_oracle=588286921274144 mkt_ratio=124159074633873 new_ratio=113332904749996"
+          ]
+        },
+        {
+          "n": 16,
+          "label": "test→admin",
+          "sig": "4N3vEZQ58NidmDNY3LfJ6kzx67Njodry2qrdFHnQfFaq8ATmng11xeoxoyurYXzzN54Tqf3kqMZSaipWxgF3w2Fd",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=19 sample_wad=637393967105263 agg_wad=637393967105263 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=9905411 mint_usdc=3621161",
+            "rb oracle kind=2 hook=1 last=588286921274144 now=637393967105263 new_oracle=603019035023479 mkt_ratio=142475379874981 new_ratio=122075647287491"
+          ]
+        },
+        {
+          "n": 17,
+          "label": "admin→test",
+          "sig": "4TXgv8VjMH5e7Tau5JvGN5DeJffqPHJxYaWm4jGQHjhz2SZ1YAw1PULJDuS9U7LHwc31ssBns5tJPYCeknWGqxTU",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 18,
+          "label": "test→admin",
+          "sig": "KnQVKM4Lqq7L9BBZHRQB7hySjFgwjLqc9e6VELRvSv6CyNZSfRxMQkcoRXsEriGwf1JNrDNZtCDrL1pWr3dEaYM",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 19,
+          "label": "admin→test",
+          "sig": "4xtHAfwsynG2KFnQzN6SvzoqGBUD6hkdybJQE93ZH4mpm3njK2aNfHkcCiLMNSX6PdC2DhMrKxTjdoqmvE2by4LG",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=22 sample_wad=644072735973597 agg_wad=644072735973597 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=12419366 mint_usdc=4387295",
+            "rb oracle kind=2 hook=1 last=622553881045688 now=644072735973597 new_oracle=629009537524060 mkt_ratio=161743002262466 new_ratio=147343079172585"
+          ]
+        },
+        {
+          "n": 20,
+          "label": "test→admin",
+          "sig": "43Cz37TxTAv1iMEg8oAAdXShK7haStyEEVfjxcihnth2Tjp9vfCLpsDd5ZxbQrcucmK9E4rWZfQ9gU9vBgiP8Fhp",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=23 sample_wad=644072735973597 agg_wad=644072735973597 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=13506765 mint_usdc=4665470",
+            "rb oracle kind=2 hook=1 last=629009537524060 now=644072735973597 new_oracle=633528497058921 mkt_ratio=166909393753459 new_ratio=153212973546847"
+          ]
+        },
+        {
+          "n": 21,
+          "label": "admin→test",
+          "sig": "52gJXqFka8Ywm22xj2DwoQfCKGi4MJjZzMonpCFoD5XTjWEojV79XU8zR67gJj1zH4tzaNi5WrCqr3j7M3NWPWA5",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=24 sample_wad=625450883116883 agg_wad=625450883116883 slot=0",
+          "rb": [
+            "rb plan side=0 mint_pair=39 mint_usdc=13",
+            "rb oracle kind=2 hook=1 last=633528497058921 now=625450883116883 new_oracle=631105212876310 mkt_ratio=171991598637332 new_ratio=158846561073992"
+          ]
+        },
+        {
+          "n": 22,
+          "label": "test→admin",
+          "sig": "3h2WJaatU9w1BG6FTZxygRcs4wkmfjonNpDjW6kbjHcAVCFwEviAAfv4Drkwh4Z67yuz8yK4i9vtLHFMphjf3bNA",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=25 sample_wad=600121096573208 agg_wad=600121096573208 slot=0",
+          "rb": [
+            "rb plan side=0 mint_pair=64 mint_usdc=22",
+            "rb oracle kind=2 hook=1 last=631105212876310 now=600121096573208 new_oracle=621809977985380 mkt_ratio=165026206792206 new_ratio=160700454789456"
+          ]
+        },
+        {
+          "n": 23,
+          "label": "admin→test",
+          "sig": "3dt3ckeAtn3aM9VH7mSLHsTPe41gDKCZfiM3tvZ15mY4d6tzdNdc4Gad2pxW3D1twiEQo72Bb64RhjqQqQXcr6cG",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=26 sample_wad=561629364431486 agg_wad=561629364431486 slot=0",
+          "rb": [
+            "rb plan side=0 mint_pair=70 mint_usdc=23",
+            "rb oracle kind=2 hook=1 last=621809977985380 now=561629364431486 new_oracle=603755793919212 mkt_ratio=154441435511073 new_ratio=158822749005942"
+          ]
+        },
+        {
+          "n": 24,
+          "label": "test→admin",
+          "sig": "BQ6VsZDQxt6DCW7CNv8U58mYyh9KZyfbdkMzFzgrieBxwBBNGqtXDsHYdViEgvLYcpbU7e44ue1SnQDKVndtqXi",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=27 sample_wad=526335715846994 agg_wad=526335715846994 slot=0",
+          "rb": [
+            "rb plan side=0 mint_pair=75 mint_usdc=25",
+            "rb oracle kind=2 hook=1 last=603755793919212 now=526335715846994 new_oracle=580529770497547 mkt_ratio=144736099399721 new_ratio=154596754124076"
+          ]
+        },
+        {
+          "n": 25,
+          "label": "admin→test",
+          "sig": "59dbZ9GzcbxHcFq3pzvFFCPnfBtk4XuzjRGvSuFcDd72WiakgkQCFodfFThz8UZAnWNLMDsZHz8Jb532nfEJ7M1N",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=28 sample_wad=492682537084398 agg_wad=492682537084398 slot=0",
+          "rb": [
+            "rb plan side=0 mint_pair=82 mint_usdc=27",
+            "rb oracle kind=2 hook=1 last=580529770497547 now=492682537084398 new_oracle=554175600473603 mkt_ratio=135481873095391 new_ratio=148862289815471"
+          ]
+        }
+      ],
+      "errors": [],
+      "before": {
+        "crawl": {
+          "cursor": 0,
+          "pass": 2,
+          "numEntries": 1,
+          "aggregateWad": "517814885906040",
+          "layouts": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "hookPool": "11111111111111111111111111111111"
+        },
+        "oracleLast": "0",
+        "oracleKind": 0
+      },
+      "patchSig": "2xRBn6MG6j5fMqJSJRx3VivZUk7tEM9NFsKs9i55VicWkNyCwNzFULeEq5fnkki1iRGyd9ZqPnn8yPkYapJvhuhx",
+      "seedSig": "3bwqoS4TBpJbUEgRdEnUhAhycUfhf8jse3Vqv39SEE5iscSpEYPYGybLrcSjNhg4SgkE49rZoT8FAuHLzRhvyzR3",
+      "depositSig": "FP3niLbKEBUeBKEvj93Fabq9SG1ETcqA3iZTaXD8WnXSuHu4oFs4DxfBBXySVBKu1gx3vnZPh7ttf1A57mECmBF",
+      "receiptMinted": "6087633",
+      "after": {
+        "crawl": {
+          "cursor": 0,
+          "pass": 28,
+          "numEntries": 1,
+          "aggregateWad": "492682537084398",
+          "layouts": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "hookPool": "11111111111111111111111111111111"
+        },
+        "oracleLast": "554175600473603",
+        "oracleKind": 0
+      },
+      "transferCount": 25,
+      "crawlPassDelta": 26,
+      "hookCrawlLogs": 22,
+      "rbMintLogs": 21
+    },
+    {
+      "sym": "GjtNtUv2",
+      "receiptMint": "GjtNtUv2AMw5jvgdgUrfzk6oFfrEkFEVLevRurpkSqi2",
+      "config": "G8YqHEUvsDQWc6YntTPAHjvACcCE3fNK829BwSiGkwgY",
+      "transfers": [
+        {
+          "n": 1,
+          "label": "admin→test",
+          "sig": "3P3CQaEmhuPdMg5w48H7RnVqPoCU2pC6MabCUA3n6FkETfpdLYja43LCdyBm6iHCeiUkphWXspQvDrH8fmYPd1Ry",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=5 sample_wad=157703 agg_wad=157703 slot=0",
+          "rb": [
+            "rb oracle kind=2 hook=1 last=0 now=157703 new_oracle=47310 mkt_ratio=82073 new_ratio=724622 plan=none"
+          ]
+        },
+        {
+          "n": 2,
+          "label": "test→admin",
+          "sig": "3V4mchYdPkFk3GsbTBJyMNRcAPc6hS45K8d9MqS2goTAG87bp5nFcsxa9P4bRyQZEimr5RXPBQoy9Sdy1zbrex9Z",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=6 sample_wad=157703 agg_wad=157703 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=0 mint_usdc=0",
+            "rb oracle kind=2 hook=1 last=47310 now=157703 new_oracle=80427 mkt_ratio=82073 new_ratio=531858"
+          ]
+        },
+        {
+          "n": 3,
+          "label": "admin→test",
+          "sig": "4BGVFNv5ZdraPQDtXbziKFTa91s8tfx1BRendm4D5MWWRgJTxwS4CFHZu1LoeLbCpCQgyLAUm7PCfhRr9ZucaM73",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=7 sample_wad=157703 agg_wad=157703 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=0 mint_usdc=0",
+            "rb oracle kind=2 hook=1 last=80427 now=157703 new_oracle=103609 mkt_ratio=82073 new_ratio=396923"
+          ]
+        },
+        {
+          "n": 4,
+          "label": "test→admin",
+          "sig": "3D4GLvog6JxoA6GzRZjZsF243PKYPxBFr15WEGKGJG2fWvPPQswnJoizxoAdQ9AYztnR1KZg9ff1nYEdQVKgJvHS",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=8 sample_wad=157703 agg_wad=157703 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=0 mint_usdc=0",
+            "rb oracle kind=2 hook=1 last=103609 now=157703 new_oracle=119837 mkt_ratio=82073 new_ratio=302468"
+          ]
+        },
+        {
+          "n": 5,
+          "label": "admin→test",
+          "sig": "purignL68SHC3iDobHknMcmTzzJ1McZUK1twkoC1gaQLJmS5QucfbqhLeD59Vxs8KDB1sTdwwjSxhihLJ2jffHS",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=9 sample_wad=157703 agg_wad=157703 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1118388 mint_usdc=1419308",
+            "rb oracle kind=2 hook=1 last=119837 now=157703 new_oracle=131196 mkt_ratio=82073 new_ratio=236350"
+          ]
+        },
+        {
+          "n": 6,
+          "label": "test→admin",
+          "sig": "4GHbqJAvY8Jmb5yKdmkVMgvBsAtqzcPseVUhjD7AG8zgMg3dCMmNB1ZRUCYzW8BQ3up8EHx4oEwd6fBkQGGRVRcx",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 7,
+          "label": "admin→test",
+          "sig": "s7Q44DrSXBn2NSrTEqGUi8C3e4373jeXitnrKPYNsRukW4HRmr3HYSiffv1QjdtZUFCEEb2agzCfqUUYEpM3P1z",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=11 sample_wad=158801 agg_wad=158801 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1229247 mint_usdc=1556274",
+            "rb oracle kind=2 hook=1 last=139148 now=158801 new_oracle=145043 mkt_ratio=88828 new_ratio=160387"
+          ]
+        },
+        {
+          "n": 8,
+          "label": "test→admin",
+          "sig": "4swpiki3xoJzf8Y7RdGvcShp3kPo3hxuzWHet9nMPfEcztvherDB5X3xVXLuYE9aFwGSBCziPDYEuFc6ZevTJBTT",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=12 sample_wad=158712 agg_wad=158712 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1292772 mint_usdc=1628668",
+            "rb oracle kind=2 hook=1 last=145043 now=158712 new_oracle=149143 mkt_ratio=91737 new_ratio=139792"
+          ]
+        },
+        {
+          "n": 9,
+          "label": "admin→test",
+          "sig": "3sJVRvRrzxt9Kv3E8qqog3U74nmgPS3xfrS8BsdRirrviSnCpXW3hhqv9uu8wAaEX9tuYEKqVeh9rAN3TFdZyo4W",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=13 sample_wad=159453 agg_wad=159453 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1349502 mint_usdc=1702319",
+            "rb oracle kind=2 hook=1 last=149143 now=159453 new_oracle=152236 mkt_ratio=95351 new_ratio=126460"
+          ]
+        },
+        {
+          "n": 10,
+          "label": "test→admin",
+          "sig": "3YBbwRgChrTZUQ3L3yfAZk8oD1idmWr1zJwDSeF4bg9zUui88VKSku8AEfam4xyS2Qqn4pXJcwfDz8UJffGj74mz",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=14 sample_wad=160510 agg_wad=160510 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1419712 mint_usdc=1778983",
+            "rb oracle kind=2 hook=1 last=152236 now=160510 new_oracle=154718 mkt_ratio=98877 new_ratio=118186"
+          ]
+        },
+        {
+          "n": 11,
+          "label": "admin→test",
+          "sig": "3kCnuty5w1Y9Xo2Ffb5FqHcyZKWRJEQyXMUN5ombscPKhwGMCdKNomKjN22qCPYjjn16NjL2xcrv7cr3GvrZYRZw",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=15 sample_wad=161486 agg_wad=161486 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1481341 mint_usdc=1859442",
+            "rb oracle kind=2 hook=1 last=154718 now=161486 new_oracle=156748 mkt_ratio=102892 new_ratio=113598"
+          ]
+        },
+        {
+          "n": 12,
+          "label": "test→admin",
+          "sig": "3zTWBHPsWdcWwjeC4DvHGUrij2iWzyKn3c343e1H87zpwbYHks7mq3Xw4w8zTsCXysiDZpWkLzMGXTsBixVU5gin",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=16 sample_wad=162550 agg_wad=162550 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1556007 mint_usdc=1944172",
+            "rb oracle kind=2 hook=1 last=156748 now=162550 new_oracle=158488 mkt_ratio=107184 new_ratio=111674"
+          ]
+        },
+        {
+          "n": 13,
+          "label": "admin→test",
+          "sig": "49Mo7mjAWEW5LfiHWVUi2KWWuiCmKCdwUdqUcdaAwJpYo9kLeJLirk88rnWF7RcdPgMX1QGEUNrBH7cS1Q5jgh7E",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=17 sample_wad=162520 agg_wad=162520 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1633338 mint_usdc=2031958",
+            "rb oracle kind=2 hook=1 last=158488 now=162520 new_oracle=159697 mkt_ratio=110386 new_ratio=111288"
+          ]
+        },
+        {
+          "n": 14,
+          "label": "test→admin",
+          "sig": "iLVCqR4KzAacC9vF7pMc1u7uyhr9TdETGAf8Wxo4HWkGoUmfLgSvzxgotx7b8iRCw5JnVHVjBhmmQq99mJFAAbc",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=18 sample_wad=164777 agg_wad=164777 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1706661 mint_usdc=2133180",
+            "rb oracle kind=2 hook=1 last=159697 now=164777 new_oracle=161221 mkt_ratio=116738 new_ratio=112923"
+          ]
+        },
+        {
+          "n": 15,
+          "label": "admin→test",
+          "sig": "4qeZRZBbRWfXn8EEK7rmX7yBN4xNZpU8ZL2ZdKSFhSwoJJS4LYdjkCR1dZvsrWduYqq4evWZ44cREU4SqrDMJ5yd",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=19 sample_wad=164719 agg_wad=164719 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1788892 mint_usdc=2224482",
+            "rb oracle kind=2 hook=1 last=161221 now=164719 new_oracle=162270 mkt_ratio=120088 new_ratio=115072"
+          ]
+        },
+        {
+          "n": 16,
+          "label": "test→admin",
+          "sig": "268k13YLsY2LVMJMWTMu9VUKBJP4ueRkqpUKcNq9PCcmD8rRKC5U4vhfy8Z7JPkAEPkNmYphnmx9duDWZDzjCg7x",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=20 sample_wad=165647 agg_wad=165647 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1884683 mint_usdc=2330570",
+            "rb oracle kind=2 hook=1 last=162270 now=165647 new_oracle=163283 mkt_ratio=124959 new_ratio=118038"
+          ]
+        },
+        {
+          "n": 17,
+          "label": "admin→test",
+          "sig": "5RNYoHg5foRhBXmHmn7aCAEC59Y1PB5o3Laph2eqpb9AyZFVisoNPNn5uMAAEVyCFXpgk15oaiJ4EVii2PXEGS3Z",
+          "crawl": null,
+          "rb": []
+        },
+        {
+          "n": 18,
+          "label": "test→admin",
+          "sig": "wSeEAXnNJLXMcmGB7L1taY5qDkjhgk7hAGvQvYR6DSsyF6VNsLFN7ZGp9ULPmKAQFLNdvZsEwFyzt4hiA9W5cgW",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=22 sample_wad=167375 agg_wad=167375 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1960450 mint_usdc=2412069",
+            "rb oracle kind=2 hook=1 last=164270 now=167375 new_oracle=165201 mkt_ratio=135403 new_ratio=125866"
+          ]
+        },
+        {
+          "n": 19,
+          "label": "admin→test",
+          "sig": "4pZRMC8WpYeQsJ67sytDSfbqKVvoSAiEM9PxMpmYZ7r3AbMqy7Xxh4YCtYrmPQDaoRKMQc3wr1fPHMLa1gCARbQQ",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=23 sample_wad=169025 agg_wad=169025 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=2166994 mint_usdc=2677816",
+            "rb oracle kind=2 hook=1 last=165201 now=169025 new_oracle=166348 mkt_ratio=142366 new_ratio=130816"
+          ]
+        },
+        {
+          "n": 20,
+          "label": "test→admin",
+          "sig": "44FyYp4Fi5AVuopjxN4feuyooWWaxiRSwo8aJAp9NQMiLeQRyWqChWsdU6Us86iH5BFG9uACqS6d3tT8zUyefqyK",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=24 sample_wad=169965 agg_wad=169965 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=2280311 mint_usdc=2796230",
+            "rb oracle kind=2 hook=1 last=166348 now=169965 new_oracle=167433 mkt_ratio=147629 new_ratio=135859"
+          ]
+        },
+        {
+          "n": 21,
+          "label": "admin→test",
+          "sig": "3VDbZcYN2aRPMbE5Si9Lb9qCuauYaCm3SMwf6EEA262WvqKfoJo948A3WYccnCsgMQKg9PdA7ta2KmwojZgiD72n",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=25 sample_wad=170891 agg_wad=170891 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=2386033 mint_usdc=2938670",
+            "rb oracle kind=2 hook=1 last=167433 now=170891 new_oracle=168470 mkt_ratio=155035 new_ratio=141611"
+          ]
+        },
+        {
+          "n": 22,
+          "label": "test→admin",
+          "sig": "5HwRxQwcPZu7gLM7wAoxZLD6cpSeA1KVS6jk8GFWkqGCtYXY2C1TVATYhYAMNbnhJiWsYracpdS67DNNX1YEcFwn",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=26 sample_wad=170891 agg_wad=170891 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1805710 mint_usdc=2199724",
+            "rb oracle kind=2 hook=1 last=168470 now=170891 new_oracle=169196 mkt_ratio=159803 new_ratio=147068"
+          ]
+        },
+        {
+          "n": 23,
+          "label": "admin→test",
+          "sig": "quCsKS65PPXSE2kLVujJ3Yu3pRy7yDpNLmKAB2Q7mbyjUY7hifFodS5Ndq9eDjZBdtcVFEyD3ei1tFne1hdwg2g",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=27 sample_wad=172519 agg_wad=172519 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=2559172 mint_usdc=3106690",
+            "rb oracle kind=2 hook=1 last=169196 now=172519 new_oracle=170192 mkt_ratio=164738 new_ratio=152369"
+          ]
+        },
+        {
+          "n": 24,
+          "label": "test→admin",
+          "sig": "4wSdrg5fp7vV1kjvABdk1DWn8bB4yQu9rKkpGapajGR6HScNW4AwUDd67zFFMWzcpqQk6T39p1J6BHsmkKFKNVkx",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=28 sample_wad=172458 agg_wad=172458 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=1821590 mint_usdc=2214524",
+            "rb oracle kind=2 hook=1 last=170192 now=172458 new_oracle=170871 mkt_ratio=171924 new_ratio=158235"
+          ]
+        },
+        {
+          "n": 25,
+          "label": "admin→test",
+          "sig": "61CucDokiBd7BtWhTUJeP2eiNouREaTbMjYUWZshYYdSA7Ruq5LANXXnKobikRoMcn49xBZSWr1u9RXHQ7bHuYBA",
+          "err": null,
+          "crawl": "Program log: crawl cur=0→0 pass=29 sample_wad=173556 agg_wad=173556 slot=0",
+          "rb": [
+            "rb plan side=1 mint_pair=2221433 mint_usdc=2692485",
+            "rb oracle kind=2 hook=1 last=170871 now=173556 new_oracle=171676 mkt_ratio=176999 new_ratio=163864"
+          ]
+        }
+      ],
+      "errors": [],
+      "before": {
+        "crawl": {
+          "cursor": 0,
+          "pass": 3,
+          "numEntries": 1,
+          "aggregateWad": "170399",
+          "layouts": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "hookPool": "11111111111111111111111111111111"
+        },
+        "oracleLast": "0",
+        "oracleKind": 0
+      },
+      "patchSig": "2rHV5BmYZF5TapQ9Ycbnrwe1VvBEGxXmo7rWDWrQA4c7DPXReShLex4FdMXf2azEzxF3bBjfz5P8YYD8bdUpb4ir",
+      "seedSig": "3Ju7iGSJLpU7kU6Ev2RkMx7Yt7dqscW3ZLR5gvpdetrwh8rfYsXZgtukzydqBRdZzwUExhJ47x7Akc9qFyn7sUXS",
+      "depositSig": "32pstFUM3X32U8piPisrCChRYEj4BnJwxbdtTsjvHPJ8DbWjMAGhXZTQy7ogTgyRoiZ7v6sxKFVKEgssmsu7HwCD",
+      "receiptMinted": "1571693148",
+      "after": {
+        "crawl": {
+          "cursor": 0,
+          "pass": 29,
+          "numEntries": 1,
+          "aggregateWad": "173556",
+          "layouts": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "hookPool": "11111111111111111111111111111111"
+        },
+        "oracleLast": "171676",
+        "oracleKind": 0
+      },
+      "transferCount": 25,
+      "crawlPassDelta": 26,
+      "hookCrawlLogs": 23,
+      "rbMintLogs": 22
+    }
+  ],
+  "finishedAt": "2026-06-21T13:28:52.582Z",
+  "totalTransfers": 100
+}

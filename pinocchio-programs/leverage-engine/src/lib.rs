@@ -25,13 +25,18 @@ mod validation;
 use config::{Config, InitParams};
 use leverage_math::{implied_market, median_wad, partial_ratio_advance, plan_from_market, plan_two_pool_from_oracle_wad, Side, CRANK_ABSORB_BPS};
 use config::{ORACLE_CRAWL, ORACLE_PUMPSWAP, ORACLE_NONE};
-use price_crawl::{InitCrawlParams, PriceCrawl, LAYOUT_CPSWAP, LAYOUT_PUMPSWAP, MAX_ENTRIES, PRICE_CRAWL_SEED, PRICE_CRAWL_SIZE};
+use price_crawl::{
+    InitCrawlParams, PriceCrawl, LAYOUT_CPSWAP, LAYOUT_PUMPSWAP, MAX_ENTRIES, PRICE_CRAWL_SEED,
+    PRICE_CRAWL_SIZE,
+};
 use pinocchio::{
     cpi::{Seed, Signer},
     entrypoint,
     error::ProgramError,
     AccountView, Address, ProgramResult, Resize,
 };
+use pinocchio_log::log;
+
 use pinocchio_system::instructions::CreateAccount;
 // Legacy SPL Token for USDC moves AND for the synthetic mints: the synths must be
 // legacy so the transfer hook (invoked from within Token-2022) can mint them without
@@ -61,10 +66,12 @@ const TAG_ADVANCE_CRAWL: u8 = 16;
 const TAG_SET_CRAWL_ENTRY: u8 = 17;
 const TAG_SET_ORACLE_KIND: u8 = 18;
 const TAG_PATCH_HOOK_METAS: u8 = 19;
+const TAG_MIGRATE_CRAWL: u8 = 20;
 
 const CONFIG_SEED: &[u8] = b"config";
 const AUTHORITY_SEED: &[u8] = b"authority";
 
+const TOKEN_MINT_OFFSET: usize = 0;
 const TOKEN_AMOUNT_OFFSET: usize = 64; // SPL Account.amount
 const MINT_SUPPLY_OFFSET: usize = 36; // SPL Mint.supply
 
@@ -84,6 +91,15 @@ fn acct_u64(av: &AccountView, o: usize) -> Result<u64, ProgramError> {
 }
 #[inline(always)]
 fn token_amount(av: &AccountView) -> Result<u64, ProgramError> { acct_u64(av, TOKEN_AMOUNT_OFFSET) }
+#[inline(always)]
+fn token_mint(av: &AccountView) -> Result<Address, ProgramError> {
+    let d = av.try_borrow()?;
+    let bytes: [u8; 32] = d
+        .get(TOKEN_MINT_OFFSET..TOKEN_MINT_OFFSET + 32)
+        .and_then(|s| s.try_into().ok())
+        .ok_or(ProgramError::InvalidAccountData)?;
+    Ok(Address::from(bytes))
+}
 #[inline(always)]
 fn mint_supply(av: &AccountView) -> Result<u64, ProgramError> { acct_u64(av, MINT_SUPPLY_OFFSET) }
 
@@ -114,6 +130,7 @@ pub fn process_instruction(program_id: &Address, accounts: &mut [AccountView], d
         TAG_SET_CRAWL_ENTRY => set_crawl_entry(accounts, rest),
         TAG_SET_ORACLE_KIND => set_oracle_kind_ix(accounts, rest),
         TAG_PATCH_HOOK_METAS => patch_hook_metas(program_id, accounts, rest),
+        TAG_MIGRATE_CRAWL => migrate_price_crawl(accounts, rest),
         _ => Err(ProgramError::InvalidInstructionData),
     }
 }
@@ -610,17 +627,13 @@ fn init_price_crawl(program_id: &Address, accounts: &mut [AccountView], d: &[u8]
         return Err(ProgramError::MissingRequiredSignature);
     }
     let cfg_key = *accounts[1].address();
-    let (base_mint, quote_mint, init_oracle) = {
+    let init_oracle = {
         let data = accounts[1].try_borrow()?;
         let c = Config::load(&data)?;
         if admin_key != c.admin()? {
             return Err(ProgramError::MissingRequiredSignature);
         }
-        (
-            c.mint_a()?,
-            c.usdc_mint()?,
-            if init_agg == 0 { c.oracle_price_last_wad()? } else { init_agg },
-        )
+        if init_agg == 0 { c.oracle_price_last_wad()? } else { init_agg }
     };
     let bump_s = [crawl_bump];
     let seeds = [
@@ -639,8 +652,6 @@ fn init_price_crawl(program_id: &Address, accounts: &mut [AccountView], d: &[u8]
 
     let params = InitCrawlParams {
         config: cfg_key,
-        base_mint,
-        quote_mint,
         num_entries,
         layouts,
         init_aggregate_wad: init_oracle,
@@ -682,6 +693,242 @@ fn set_crawl_entry(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
     price_crawl::set_entry_layout(&mut crawl, index, layout)
 }
 
+/// Hook path: read two reserve token accounts (boxed in `price_crawl`), no pool/LUT.
+#[inline(never)]
+fn crawl_sample_reserves(
+    crawl: &mut AccountView,
+    config: &AccountView,
+    base_vault: &AccountView,
+    quote_vault: &AccountView,
+    slot: u64,
+) -> Result<u128, ProgramError> {
+    if crawl.data_len() < PRICE_CRAWL_SIZE {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    let cfg_key = *config.address();
+    let (base_mint, quote_mint) = {
+        let cfg = config.try_borrow()?;
+        let c = Config::load(&cfg)?;
+        (c.mint_a()?, c.usdc_mint()?)
+    };
+
+    let (cursor, num, layout) = {
+        let data = crawl.try_borrow()?;
+        let pc = PriceCrawl::load(&data)?;
+        if pc.config()? != cfg_key {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        let n = pc.num_entries();
+        if n == 0 {
+            return Ok(0);
+        }
+        (pc.cursor(), n, pc.entry_layout(pc.cursor() as usize))
+    };
+
+    if layout != LAYOUT_CPSWAP && layout != LAYOUT_PUMPSWAP {
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    {
+        let data = crawl.try_borrow()?;
+        let pc = PriceCrawl::load(&data)?;
+        let boxed_bv = pc.hook_base_vault()?;
+        let boxed_qv = pc.hook_quote_vault()?;
+        if boxed_bv != Address::from([0u8; 32]) && boxed_bv != *base_vault.address() {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        if boxed_qv != Address::from([0u8; 32]) && boxed_qv != *quote_vault.address() {
+            return Err(ProgramError::InvalidAccountData);
+        }
+    }
+
+    if token_mint(base_vault)? != base_mint || token_mint(quote_vault)? != quote_mint {
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    let base_res = token_amount(base_vault)?;
+    let quote_res = token_amount(quote_vault)?;
+    if base_res < price_crawl::MIN_BASE_RESERVE {
+        return Ok(0);
+    }
+
+    let price_wad = match layout {
+        LAYOUT_CPSWAP => cpswap::price_wad(base_res, quote_res).ok_or(ProgramError::InvalidAccountData)?,
+        LAYOUT_PUMPSWAP => pumpswap::price_wad(base_res, quote_res).ok_or(ProgramError::InvalidAccountData)?,
+        _ => return Err(ProgramError::InvalidAccountData),
+    };
+
+    let new_agg = {
+        let data = crawl.try_borrow()?;
+        let pc = PriceCrawl::load(&data)?;
+        let mut buf = [0u128; MAX_ENTRIES];
+        for i in 0..num as usize {
+            buf[i] = if i == cursor as usize { price_wad } else { pc.sample_price(i)? };
+        }
+        median_wad(&buf[..num as usize])
+    };
+
+    let mut data = crawl.try_borrow_mut()?;
+    price_crawl::store_sample_and_advance(&mut data, price_wad, slot, new_agg)?;
+    let (next_cur, pass) = {
+        let pc = PriceCrawl::load(&data)?;
+        (pc.cursor(), pc.pass())
+    };
+    log!(
+        "crawl cur={}→{} pass={} sample_wad={} agg_wad={} slot={}",
+        cursor,
+        next_cur,
+        pass,
+        price_wad,
+        new_agg,
+        slot
+    );
+    Ok(new_agg)
+}
+
+/// Crank path: resolve vaults from pool + LUT, seed hook box with reserve accounts.
+#[inline(never)]
+fn crawl_sample_venue(
+    crawl: &mut AccountView,
+    config: &AccountView,
+    lut: Option<&AccountView>,
+    pool: &AccountView,
+    base_vault: &AccountView,
+    quote_vault: &AccountView,
+    slot: u64,
+) -> Result<u128, ProgramError> {
+    if crawl.data_len() < PRICE_CRAWL_SIZE {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    let cfg_key = *config.address();
+    let (base_mint, quote_mint) = {
+        let cfg = config.try_borrow()?;
+        let c = Config::load(&cfg)?;
+        (c.mint_a()?, c.usdc_mint()?)
+    };
+
+    let (cursor, num, layout) = {
+        let data = crawl.try_borrow()?;
+        let pc = PriceCrawl::load(&data)?;
+        if pc.config()? != cfg_key {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        let n = pc.num_entries();
+        if n == 0 {
+            return Ok(0);
+        }
+        (pc.cursor(), n, pc.entry_layout(pc.cursor() as usize))
+    };
+
+    if layout != LAYOUT_CPSWAP && layout != LAYOUT_PUMPSWAP {
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    {
+        let data = crawl.try_borrow()?;
+        let pc = PriceCrawl::load(&data)?;
+        let boxed_pool = pc.hook_pool()?;
+        if boxed_pool != Address::from([0u8; 32]) && boxed_pool != *pool.address() {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        let boxed_bv = pc.hook_base_vault()?;
+        let boxed_qv = pc.hook_quote_vault()?;
+        if boxed_bv != Address::from([0u8; 32]) && boxed_bv != *base_vault.address() {
+            return Err(ProgramError::InvalidAccountData);
+        }
+        if boxed_qv != Address::from([0u8; 32]) && boxed_qv != *quote_vault.address() {
+            return Err(ProgramError::InvalidAccountData);
+        }
+    }
+    if let Some(lut) = lut {
+        let lut_data = lut.try_borrow()?;
+        if lut_cpi::address_at(&lut_data, cursor as usize)? != *pool.address() {
+            return Err(ProgramError::InvalidAccountData);
+        }
+    }
+
+    let pool_key = *pool.address();
+    let base_res = token_amount(base_vault)?;
+    let quote_res = token_amount(quote_vault)?;
+    if base_res < price_crawl::MIN_BASE_RESERVE {
+        return Ok(0);
+    }
+
+    let price_wad = match layout {
+        LAYOUT_PUMPSWAP => {
+            let (bv, qv) = pumpswap::validate_pool(pool, &pool_key)?;
+            if base_vault.address() != &bv || quote_vault.address() != &qv {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            pumpswap::price_wad(base_res, quote_res).ok_or(ProgramError::InvalidAccountData)?
+        }
+        LAYOUT_CPSWAP => {
+            let pool_data = pool.try_borrow()?;
+            if pool.owner() != &cpswap::CP_SWAP_ID {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            let (v0, v1) = cpswap::pool_vaults(&pool_data)?;
+            let (t0, t1) = cpswap::pool_mints(&pool_data)?;
+            let (bv, qv) = if &t0 == &base_mint && &t1 == &quote_mint {
+                (v0, v1)
+            } else if &t1 == &base_mint && &t0 == &quote_mint {
+                (v1, v0)
+            } else {
+                return Err(ProgramError::InvalidAccountData);
+            };
+            if base_vault.address() != &bv || quote_vault.address() != &qv {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            cpswap::price_wad(base_res, quote_res).ok_or(ProgramError::InvalidAccountData)?
+        }
+        _ => return Err(ProgramError::InvalidAccountData),
+    };
+
+    let new_agg = {
+        let data = crawl.try_borrow()?;
+        let pc = PriceCrawl::load(&data)?;
+        let mut buf = [0u128; MAX_ENTRIES];
+        for i in 0..num as usize {
+            buf[i] = if i == cursor as usize { price_wad } else { pc.sample_price(i)? };
+        }
+        median_wad(&buf[..num as usize])
+    };
+
+    let mut data = crawl.try_borrow_mut()?;
+    price_crawl::store_sample_and_advance(&mut data, price_wad, slot, new_agg)?;
+    let (next_cur, pass) = {
+        let pc = PriceCrawl::load(&data)?;
+        (pc.cursor(), pc.pass())
+    };
+    let (bv, qv) = (*base_vault.address(), *quote_vault.address());
+    if let Some(lut) = lut {
+        let lut_data = lut.try_borrow()?;
+        let next_pool = lut_cpi::address_at(&lut_data, next_cur as usize)?;
+        if next_pool == pool_key {
+            price_crawl::set_hook_reserves(&mut data, &bv, &qv)?;
+        } else {
+            price_crawl::set_hook_reserves(
+                &mut data,
+                &Address::from([0u8; 32]),
+                &Address::from([0u8; 32]),
+            )?;
+            let _ = next_pool;
+        }
+    } else {
+        price_crawl::set_hook_reserves(&mut data, &bv, &qv)?;
+    }
+    log!(
+        "crawl cur={}→{} pass={} sample_wad={} agg_wad={} slot={}",
+        cursor,
+        next_cur,
+        pass,
+        price_wad,
+        new_agg,
+        slot
+    );
+    Ok(new_agg)
+}
+
 /// Permissionless crank: read one venue, store sample, advance cursor, median on wrap.
 ///
 /// accounts: 0 price_crawl(w) 1 config 2 root_lut 3 pool 4 base_vault 5 quote_vault
@@ -691,99 +938,28 @@ fn advance_crawl(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
         return Err(ProgramError::NotEnoughAccountKeys);
     }
     let slot = du64(d, 0)?;
-
-    let (cfg_key, root_lut_key, base_mint, quote_mint) = {
+    let root_lut_key = {
         let cfg = accounts[1].try_borrow()?;
-        let c = Config::load(&cfg)?;
-        (
-            *accounts[1].address(),
-            c.lookup_table()?,
-            c.mint_a()?,
-            c.usdc_mint()?,
-        )
+        Config::load(&cfg)?.lookup_table()?
     };
     if root_lut_key == Address::from([0u8; 32]) || accounts[2].address() != &root_lut_key {
         return Err(ProgramError::InvalidAccountData);
     }
-
-    let (cursor, num, layout) = {
-        let crawl = accounts[0].try_borrow()?;
-        let pc = PriceCrawl::load(&crawl)?;
-        if pc.config()? != cfg_key {
-            return Err(ProgramError::InvalidAccountData);
-        }
-        let n = pc.num_entries();
-        if n == 0 {
-            return Ok(());
-        }
-        (pc.cursor(), n, pc.entry_layout(pc.cursor() as usize))
-    };
-
-    if layout != LAYOUT_CPSWAP && layout != LAYOUT_PUMPSWAP {
-        return Err(ProgramError::InvalidAccountData);
-    }
-
-    // Root LUT phone book: entry `cursor` must match the pool passed in (or child LUT).
-    {
-        let lut = accounts[2].try_borrow()?;
-        if lut_cpi::address_at(&lut, cursor as usize)? != *accounts[3].address() {
-            return Err(ProgramError::InvalidAccountData);
-        }
-    }
-
-    let pool_key = *accounts[3].address();
-    let base_res = token_amount(&accounts[4])?;
-    let quote_res = token_amount(&accounts[5])?;
-    if base_res < price_crawl::MIN_BASE_RESERVE {
-        return Ok(());
-    }
-
-    let price_wad = match layout {
-        LAYOUT_PUMPSWAP => {
-            let (bv, qv) = pumpswap::validate_pool(&accounts[3], &pool_key)?;
-            if accounts[4].address() != &bv || accounts[5].address() != &qv {
-                return Err(ProgramError::InvalidAccountData);
-            }
-            pumpswap::price_wad(base_res, quote_res).ok_or(ProgramError::InvalidAccountData)?
-        }
-        LAYOUT_CPSWAP => {
-            let pool_data = accounts[3].try_borrow()?;
-            if accounts[3].owner() != &cpswap::CP_SWAP_ID {
-                return Err(ProgramError::InvalidAccountData);
-            }
-            let (v0, v1) = cpswap::pool_vaults(&pool_data)?;
-            let (t0, t1) = cpswap::pool_mints(&pool_data)?;
-            let (base_vault, quote_vault) = if &t0 == &base_mint && &t1 == &quote_mint {
-                (v0, v1)
-            } else if &t1 == &base_mint && &t0 == &quote_mint {
-                (v1, v0)
-            } else {
-                return Err(ProgramError::InvalidAccountData);
-            };
-            if accounts[4].address() != &base_vault || accounts[5].address() != &quote_vault {
-                return Err(ProgramError::InvalidAccountData);
-            }
-            cpswap::price_wad(base_res, quote_res).ok_or(ProgramError::InvalidAccountData)?
-        }
-        _ => return Err(ProgramError::InvalidAccountData),
-    };
-
-    let mut samples = [0u128; MAX_ENTRIES];
-    {
-        let crawl = accounts[0].try_borrow()?;
-        let pc = PriceCrawl::load(&crawl)?;
-        for i in 0..num as usize {
-            samples[i] = if i == cursor as usize {
-                price_wad
-            } else {
-                pc.sample_price(i)?
-            };
-        }
-    }
-    let new_agg = median_wad(&samples[..num as usize]);
-
-    let mut crawl = accounts[0].try_borrow_mut()?;
-    price_crawl::store_sample_and_advance(&mut crawl, price_wad, slot, new_agg)
+    let (crawl, rest) = accounts.split_at_mut(1);
+    let (config, rest) = rest.split_at_mut(1);
+    let (lut, rest) = rest.split_at_mut(1);
+    let (pool, rest) = rest.split_at_mut(1);
+    let (base_vault, quote_vault) = rest.split_at_mut(1);
+    let _ = crawl_sample_venue(
+        &mut crawl[0],
+        &config[0],
+        Some(&lut[0]),
+        &pool[0],
+        &base_vault[0],
+        &quote_vault[0],
+        slot,
+    )?;
+    Ok(())
 }
 
 /// Admin: set `oracle_kind` (0/1/2). Grows legacy 400-byte configs to 432.
@@ -820,18 +996,82 @@ fn set_oracle_kind_ix(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
     Ok(())
 }
 
+/// Admin: grow legacy 423-byte `price_crawl` to 519 bytes (hook venue fields + sample shift).
+///
+/// accounts: 0 admin(signer,w) 1 config 2 price_crawl(w) 3 system
+fn migrate_price_crawl(accounts: &mut [AccountView], _d: &[u8]) -> ProgramResult {
+    if accounts.len() < 4 {
+        return Err(ProgramError::NotEnoughAccountKeys);
+    }
+    let admin_key = *accounts[0].address();
+    if !accounts[0].is_signer() {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+    let cfg_key = *accounts[1].address();
+    {
+        let cfg = accounts[1].try_borrow()?;
+        let c = Config::load(&cfg)?;
+        if admin_key != c.admin()? {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+    }
+    if accounts[2].data_len() >= PRICE_CRAWL_SIZE {
+        return Ok(());
+    }
+    if accounts[2].data_len() < 423 {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    let mut legacy_buf = [0u8; 423];
+    {
+        let src = accounts[2].try_borrow()?;
+        legacy_buf.copy_from_slice(&src[..423]);
+    }
+    let legacy = &legacy_buf[..];
+    let pc = PriceCrawl::load_legacy(legacy)?;
+    if pc.config()? != cfg_key {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    accounts[2].resize(PRICE_CRAWL_SIZE)?;
+    let mut d = accounts[2].try_borrow_mut()?;
+    d[..423].copy_from_slice(legacy);
+    d[423..PRICE_CRAWL_SIZE].fill(0);
+    for i in 0..MAX_ENTRIES {
+        d[155 + i] = legacy[123 + i];
+    }
+    for i in 0..MAX_ENTRIES {
+        let src = 135 + i * 24;
+        let dst = 167 + i * 24;
+        d[dst..dst + 24].copy_from_slice(&legacy[src..src + 24]);
+    }
+    wr_zero_hook_venue(&mut d);
+    Ok(())
+}
+
+#[inline]
+fn wr_zero_hook_venue(d: &mut [u8]) {
+    d[59..91].fill(0);
+    d[91..123].fill(0);
+    d[123..155].fill(0);
+}
+
 /// Admin: rewrite receipt hook ExtraAccountMetaList (grow/shrink embed count).
 ///
 /// accounts: 0 admin(signer,w) 1 config 2 extra_meta_list(w) 3 receipt_mint
 ///           4 system 5.. embed accounts in hook order
 /// data: count(1) writable_mask(u16 LE)
+/// When count == 16 (boxed crawl hook), only pass embeds 0..12; metas 13–15 are disc-2.
 fn patch_hook_metas(program_id: &Address, accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
     let count = *d.first().ok_or(ProgramError::InvalidInstructionData)? as usize;
     let mask = u16::from_le_bytes([
         *d.get(1).ok_or(ProgramError::InvalidInstructionData)?,
         *d.get(2).ok_or(ProgramError::InvalidInstructionData)?,
     ]);
-    if accounts.len() < 5 + count || count > 16 {
+    let embed_need = if count == hook::CRAWL_HOOK_META_COUNT {
+        hook::CRAWL_HOOK_PATCH_EMBED_COUNT
+    } else {
+        count
+    };
+    if accounts.len() < 5 + embed_need || count > 16 {
         return Err(ProgramError::NotEnoughAccountKeys);
     }
     let admin_key = *accounts[0].address();
@@ -850,28 +1090,46 @@ fn patch_hook_metas(program_id: &Address, accounts: &mut [AccountView], d: &[u8]
     if accounts[2].owner() != program_id {
         return Err(ProgramError::InvalidAccountData);
     }
-    if accounts[2].data_len() < new_size {
+    if accounts[2].data_len() != new_size {
         accounts[2].resize(new_size)?;
     }
-    let mut entries: [([u8; 32], bool); 16] = [([0u8; 32], false); 16];
-    for i in 0..count {
-        entries[i] = (*accounts[5 + i].address().as_array(), (mask >> i) & 1 == 1);
+    let crawl_box = if count == hook::CRAWL_HOOK_META_COUNT {
+        let mut crawl_entries: [([u8; 32], bool); 12] = [([0u8; 32], false); 12];
+        for i in 0..hook::CRAWL_HOOK_PATCH_EMBED_COUNT {
+            crawl_entries[i] = (*accounts[5 + i].address().as_array(), (mask >> i) & 1 == 1);
+        }
+        Some(crawl_entries)
+    } else {
+        None
+    };
+    let mut literal_entries: [([u8; 32], bool); 16] = [([0u8; 32], false); 16];
+    if count != hook::CRAWL_HOOK_META_COUNT {
+        for i in 0..count {
+            literal_entries[i] = (*accounts[5 + i].address().as_array(), (mask >> i) & 1 == 1);
+        }
     }
     let mut data = accounts[2].try_borrow_mut()?;
     if data.len() < new_size {
         return Err(ProgramError::InvalidAccountData);
     }
-    data[0..8].copy_from_slice(&hook::EXECUTE_DISC);
-    let tlv_len = (4 + count * hook::META_LEN) as u32;
-    data[8..12].copy_from_slice(&tlv_len.to_le_bytes());
-    data[12..16].copy_from_slice(&(count as u32).to_le_bytes());
-    let mut o = 16;
-    for entry in entries.iter().take(count) {
-        data[o] = 0;
-        data[o + 1..o + 33].copy_from_slice(&entry.0);
-        data[o + 33] = 0;
-        data[o + 34] = entry.1 as u8;
-        o += hook::META_LEN;
+    if let Some(crawl_entries) = crawl_box {
+        hook::write_crawl_hook_metas(&mut data, &crawl_entries, mask);
+    } else {
+        data[0..8].copy_from_slice(&hook::EXECUTE_DISC);
+        let tlv_len = (4 + count * hook::META_LEN) as u32;
+        data[8..12].copy_from_slice(&tlv_len.to_le_bytes());
+        data[12..16].copy_from_slice(&(count as u32).to_le_bytes());
+        let mut o = 16;
+        for entry in literal_entries.iter().take(count) {
+            data[o] = 0;
+            data[o + 1..o + 33].copy_from_slice(&entry.0);
+            data[o + 33] = 0;
+            data[o + 34] = entry.1 as u8;
+            o += hook::META_LEN;
+        }
+        if data.len() > new_size {
+            data[new_size..].fill(0);
+        }
     }
     Ok(())
 }
@@ -896,9 +1154,12 @@ fn rebalance(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
 ///   8 vault_busdc_b(w) 9 vault_busdc_usdc 10 token_program
 /// When config.oracle_kind == pumpswap, also pass:
 ///   11 oracle_pool 12 oracle_base_vault 13 oracle_quote_vault
-/// When config.oracle_kind == crawl, also pass:
-///   11 price_crawl (read-only aggregate)
+/// When config.oracle_kind == crawl on the transfer hook, also pass:
+///   11 price_crawl(w) 12 base_vault 13 quote_vault (boxed reserves via disc-2)
+/// Hook samples the venue, advances cursor, then rebalances from the new median.
+/// Standalone rebalance (base=0) with crawl only needs 11 price_crawl (read aggregate).
 /// `user_leverage_bps == 0` ⇒ use the config's l_max (full leverage, elastic-capped).
+#[inline(never)]
 fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u64) -> ProgramResult {
     if accounts.len() < base + 10 {
         return Err(ProgramError::NotEnoughAccountKeys);
@@ -946,16 +1207,49 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
     };
 
     let oracle_now_wad = if oracle_kind == ORACLE_CRAWL {
-        if accounts.len() < base + 11 {
-            return Ok(());
+        let hook_crawl = base > 0 && accounts.len() >= base + hook::CRAWL_HOOK_META_COUNT;
+        if hook_crawl {
+            let slot = 0;
+            let (prefix, tail) = accounts.split_at_mut(base + 11);
+            let (crawl_acct, reserves) = tail.split_at_mut(1);
+            let agg = match crawl_sample_reserves(
+                &mut crawl_acct[0],
+                &prefix[base],
+                &reserves[0],
+                &reserves[1],
+                slot,
+            ) {
+                Ok(a) => a,
+                Err(e) => {
+                    log!("rb crawl sample err");
+                    return Err(e);
+                }
+            };
+            if agg == 0 {
+                log!("rb crawl: thin pool");
+                return Ok(());
+            }
+            agg
+        } else {
+            if accounts.len() < base + 12 {
+                log!("rb crawl: missing accounts need={}", base + 12);
+                return Ok(());
+            }
+            let crawl_data = accounts[base + 11].try_borrow()?;
+            let crawl = PriceCrawl::load(&crawl_data)?;
+            let agg = crawl.aggregate_wad()?;
+            if agg == 0 {
+                log!("rb crawl: aggregate zero");
+                return Ok(());
+            }
+            log!(
+                "rb crawl read: cur={} pass={} agg_wad={}",
+                crawl.cursor(),
+                crawl.pass(),
+                agg
+            );
+            agg
         }
-        let crawl_data = accounts[base + 10].try_borrow()?;
-        let crawl = PriceCrawl::load(&crawl_data)?;
-        let agg = crawl.aggregate_wad()?;
-        if agg == 0 {
-            return Ok(());
-        }
-        agg
     } else if oracle_kind == ORACLE_PUMPSWAP {
         if oracle_pool == Address::from([0u8; 32]) || accounts.len() < base + 13 {
             return Ok(());
@@ -981,17 +1275,23 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
         ) {
             Some(p) => p,
             None => {
+                let new_oracle = partial_ratio_advance(oracle_last, oracle_now_wad, CRANK_ABSORB_BPS);
+                let new_ratio = partial_ratio_advance(last_ratio, market.ratio_wad, CRANK_ABSORB_BPS);
+                log!(
+                    "rb oracle kind={} hook={} last={} now={} new_oracle={} mkt_ratio={} new_ratio={} plan=none",
+                    oracle_kind,
+                    if base > 0 { 1u8 } else { 0u8 },
+                    oracle_last,
+                    oracle_now_wad,
+                    new_oracle,
+                    market.ratio_wad,
+                    new_ratio
+                );
                 let mut data = accounts[base].try_borrow_mut()?;
                 if oracle_kind == ORACLE_PUMPSWAP || oracle_kind == ORACLE_CRAWL {
-                    config::set_oracle_price_last(
-                        &mut data,
-                        partial_ratio_advance(oracle_last, oracle_now_wad, CRANK_ABSORB_BPS),
-                    );
+                    config::set_oracle_price_last(&mut data, new_oracle);
                 }
-                config::set_last_ratio(
-                    &mut data,
-                    partial_ratio_advance(last_ratio, market.ratio_wad, CRANK_ABSORB_BPS),
-                );
+                config::set_last_ratio(&mut data, new_ratio);
                 return Ok(());
             }
         }
@@ -1021,6 +1321,13 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
     };
     // legacy SPL Token MintTo: the hook calls this from inside a Token-2022 transfer,
     // so the synth mint MUST be legacy (minting a T22 synth here would re-enter T22).
+    let side_u8 = match plan.side { Side::A => 0u8, Side::B => 1u8 };
+    log!(
+        "rb plan side={} mint_pair={} mint_usdc={}",
+        side_u8,
+        plan.amount_pair_pool,
+        plan.amount_usdc_pool
+    );
     if plan.amount_pair_pool > 0 {
         MintTo::new(mint, pair_vault, authority, plan.amount_pair_pool).invoke_signed(&[Signer::from(&seeds)])?;
     }
@@ -1029,23 +1336,32 @@ fn run_rebalance(accounts: &mut [AccountView], base: usize, user_leverage_bps: u
     }
 
     // Partial basis advance — repeated transfers keep cranking until caught up.
-    let mut data = accounts[base].try_borrow_mut()?;
+    let new_oracle = partial_ratio_advance(oracle_last, oracle_now_wad, CRANK_ABSORB_BPS);
+    let new_ratio = partial_ratio_advance(last_ratio, market.ratio_wad, CRANK_ABSORB_BPS);
     if oracle_kind == ORACLE_PUMPSWAP || oracle_kind == ORACLE_CRAWL {
-        config::set_oracle_price_last(
-            &mut data,
-            partial_ratio_advance(oracle_last, oracle_now_wad, CRANK_ABSORB_BPS),
+        log!(
+            "rb oracle kind={} hook={} last={} now={} new_oracle={} mkt_ratio={} new_ratio={}",
+            oracle_kind,
+            if base > 0 { 1u8 } else { 0u8 },
+            oracle_last,
+            oracle_now_wad,
+            new_oracle,
+            market.ratio_wad,
+            new_ratio
         );
     }
-    config::set_last_ratio(
-        &mut data,
-        partial_ratio_advance(last_ratio, market.ratio_wad, CRANK_ABSORB_BPS),
-    );
+    let mut data = accounts[base].try_borrow_mut()?;
+    if oracle_kind == ORACLE_PUMPSWAP || oracle_kind == ORACLE_CRAWL {
+        config::set_oracle_price_last(&mut data, new_oracle);
+    }
+    config::set_last_ratio(&mut data, new_ratio);
     Ok(())
 }
 
 /// Token-2022 transfer-hook `Execute`: a receipt transfer triggers a rebalance.
 /// Standard accounts 0..4 (source, mint, destination, owner, meta_list); the
 /// rebalance accounts are the resolved extras starting at index 5.
+#[inline(never)]
 fn hook_execute(accounts: &mut [AccountView]) -> ProgramResult {
     if accounts.len() < 5 {
         return Err(ProgramError::NotEnoughAccountKeys);
@@ -1060,7 +1376,13 @@ fn hook_execute(accounts: &mut [AccountView]) -> ProgramResult {
         let c = Config::load(&data)?;
         match c.oracle_kind() {
             ORACLE_PUMPSWAP => 13,
-            ORACLE_CRAWL => 11,
+            ORACLE_CRAWL => {
+                if accounts.len() >= 5 + hook::CRAWL_HOOK_META_COUNT {
+                    hook::CRAWL_HOOK_META_COUNT
+                } else {
+                    12
+                }
+            }
             _ => 10,
         }
     };
@@ -1085,16 +1407,15 @@ fn init_extra_account_metas(program_id: &Address, accounts: &mut [AccountView], 
         *d.get(10).ok_or(ProgramError::InvalidInstructionData)?,
     ]);
     let bump = *d.get(11).ok_or(ProgramError::InvalidInstructionData)?;
-    if accounts.len() < 4 + count || count > 16 {
+    let embed_need = if count == hook::CRAWL_HOOK_META_COUNT {
+        hook::CRAWL_HOOK_PATCH_EMBED_COUNT
+    } else {
+        count
+    };
+    if accounts.len() < 4 + embed_need || count > 16 {
         return Err(ProgramError::NotEnoughAccountKeys);
     }
     let receipt_key = *accounts[2].address();
-
-    // collect the embed addresses BEFORE the mutable borrow of the list account
-    let mut entries: [([u8; 32], bool); 16] = [([0u8; 32], false); 16];
-    for i in 0..count {
-        entries[i] = (*accounts[4 + i].address().as_array(), (mask >> i) & 1 == 1);
-    }
 
     let seeds = [
         Seed::from(b"extra-account-metas".as_ref()),
@@ -1110,18 +1431,40 @@ fn init_extra_account_metas(program_id: &Address, accounts: &mut [AccountView], 
     }
     .invoke_signed(&[Signer::from(&seeds)])?;
 
+    let crawl_box = if count == hook::CRAWL_HOOK_META_COUNT {
+        let mut crawl_entries: [([u8; 32], bool); 12] = [([0u8; 32], false); 12];
+        for i in 0..hook::CRAWL_HOOK_PATCH_EMBED_COUNT {
+            crawl_entries[i] = (*accounts[4 + i].address().as_array(), (mask >> i) & 1 == 1);
+        }
+        Some(crawl_entries)
+    } else {
+        None
+    };
+    let mut literal_entries: [([u8; 32], bool); 16] = [([0u8; 32], false); 16];
+    if count != hook::CRAWL_HOOK_META_COUNT {
+        for i in 0..count {
+            literal_entries[i] = (*accounts[4 + i].address().as_array(), (mask >> i) & 1 == 1);
+        }
+    }
+    if accounts[1].data_len() != hook::size_of(count) {
+        accounts[1].resize(hook::size_of(count) as usize)?;
+    }
     let mut data = accounts[1].try_borrow_mut()?;
-    data[0..8].copy_from_slice(&hook::EXECUTE_DISC);
-    let tlv_len = (4 + count * hook::META_LEN) as u32;
-    data[8..12].copy_from_slice(&tlv_len.to_le_bytes());
-    data[12..16].copy_from_slice(&(count as u32).to_le_bytes());
-    let mut o = 16;
-    for entry in entries.iter().take(count) {
-        data[o] = 0; // literal-pubkey discriminator
-        data[o + 1..o + 33].copy_from_slice(&entry.0);
-        data[o + 33] = 0; // is_signer
-        data[o + 34] = entry.1 as u8; // is_writable
-        o += hook::META_LEN;
+    if let Some(crawl_entries) = crawl_box {
+        hook::write_crawl_hook_metas(&mut data, &crawl_entries, mask);
+    } else {
+        data[0..8].copy_from_slice(&hook::EXECUTE_DISC);
+        let tlv_len = (4 + count * hook::META_LEN) as u32;
+        data[8..12].copy_from_slice(&tlv_len.to_le_bytes());
+        data[12..16].copy_from_slice(&(count as u32).to_le_bytes());
+        let mut o = 16;
+        for entry in literal_entries.iter().take(count) {
+            data[o] = 0; // literal-pubkey discriminator
+            data[o + 1..o + 33].copy_from_slice(&entry.0);
+            data[o + 33] = 0; // is_signer
+            data[o + 34] = entry.1 as u8; // is_writable
+            o += hook::META_LEN;
+        }
     }
     Ok(())
 }
