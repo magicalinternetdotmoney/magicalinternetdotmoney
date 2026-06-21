@@ -30,7 +30,7 @@ use pinocchio::{
     cpi::{Seed, Signer},
     entrypoint,
     error::ProgramError,
-    AccountView, Address, ProgramResult,
+    AccountView, Address, ProgramResult, Resize,
 };
 use pinocchio_system::instructions::CreateAccount;
 // Legacy SPL Token for USDC moves AND for the synthetic mints: the synths must be
@@ -59,6 +59,8 @@ const TAG_BACKFILL_RECEIPT_T22: u8 = 14;
 const TAG_INIT_PRICE_CRAWL: u8 = 15;
 const TAG_ADVANCE_CRAWL: u8 = 16;
 const TAG_SET_CRAWL_ENTRY: u8 = 17;
+const TAG_SET_ORACLE_KIND: u8 = 18;
+const TAG_PATCH_HOOK_METAS: u8 = 19;
 
 const CONFIG_SEED: &[u8] = b"config";
 const AUTHORITY_SEED: &[u8] = b"authority";
@@ -110,6 +112,8 @@ pub fn process_instruction(program_id: &Address, accounts: &mut [AccountView], d
         TAG_INIT_PRICE_CRAWL => init_price_crawl(program_id, accounts, rest),
         TAG_ADVANCE_CRAWL => advance_crawl(accounts, rest),
         TAG_SET_CRAWL_ENTRY => set_crawl_entry(accounts, rest),
+        TAG_SET_ORACLE_KIND => set_oracle_kind_ix(accounts, rest),
+        TAG_PATCH_HOOK_METAS => patch_hook_metas(program_id, accounts, rest),
         _ => Err(ProgramError::InvalidInstructionData),
     }
 }
@@ -780,6 +784,96 @@ fn advance_crawl(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
 
     let mut crawl = accounts[0].try_borrow_mut()?;
     price_crawl::store_sample_and_advance(&mut crawl, price_wad, slot, new_agg)
+}
+
+/// Admin: set `oracle_kind` (0/1/2). Grows legacy 400-byte configs to 432.
+///
+/// accounts: 0 admin(signer,w) 1 config(w) 2 system
+/// data: kind(1)
+fn set_oracle_kind_ix(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
+    if accounts.len() < 2 {
+        return Err(ProgramError::NotEnoughAccountKeys);
+    }
+    let kind = *d.first().ok_or(ProgramError::InvalidInstructionData)?;
+    if kind != ORACLE_NONE && kind != ORACLE_PUMPSWAP && kind != ORACLE_CRAWL {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+    let admin_key = *accounts[0].address();
+    if !accounts[0].is_signer() {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+    {
+        let data = accounts[1].try_borrow()?;
+        let c = Config::load(&data)?;
+        if admin_key != c.admin()? {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+    }
+    if accounts[1].data_len() < config::CONFIG_SIZE {
+        if accounts.len() < 3 {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        }
+        accounts[1].resize(config::CONFIG_SIZE)?;
+    }
+    let mut data = accounts[1].try_borrow_mut()?;
+    config::set_oracle_kind(&mut data, kind);
+    Ok(())
+}
+
+/// Admin: rewrite receipt hook ExtraAccountMetaList (grow/shrink embed count).
+///
+/// accounts: 0 admin(signer,w) 1 config 2 extra_meta_list(w) 3 receipt_mint
+///           4 system 5.. embed accounts in hook order
+/// data: count(1) writable_mask(u16 LE)
+fn patch_hook_metas(program_id: &Address, accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
+    let count = *d.first().ok_or(ProgramError::InvalidInstructionData)? as usize;
+    let mask = u16::from_le_bytes([
+        *d.get(1).ok_or(ProgramError::InvalidInstructionData)?,
+        *d.get(2).ok_or(ProgramError::InvalidInstructionData)?,
+    ]);
+    if accounts.len() < 5 + count || count > 16 {
+        return Err(ProgramError::NotEnoughAccountKeys);
+    }
+    let admin_key = *accounts[0].address();
+    if !accounts[0].is_signer() {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+    let receipt_key = *accounts[3].address();
+    {
+        let cfg = accounts[1].try_borrow()?;
+        let c = Config::load(&cfg)?;
+        if admin_key != c.admin()? || receipt_key != c.receipt_mint()? {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+    }
+    let new_size = hook::size_of(count);
+    if accounts[2].owner() != program_id {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    if accounts[2].data_len() < new_size {
+        accounts[2].resize(new_size)?;
+    }
+    let mut entries: [([u8; 32], bool); 16] = [([0u8; 32], false); 16];
+    for i in 0..count {
+        entries[i] = (*accounts[5 + i].address().as_array(), (mask >> i) & 1 == 1);
+    }
+    let mut data = accounts[2].try_borrow_mut()?;
+    if data.len() < new_size {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    data[0..8].copy_from_slice(&hook::EXECUTE_DISC);
+    let tlv_len = (4 + count * hook::META_LEN) as u32;
+    data[8..12].copy_from_slice(&tlv_len.to_le_bytes());
+    data[12..16].copy_from_slice(&(count as u32).to_le_bytes());
+    let mut o = 16;
+    for entry in entries.iter().take(count) {
+        data[o] = 0;
+        data[o + 1..o + 33].copy_from_slice(&entry.0);
+        data[o + 33] = 0;
+        data[o + 34] = entry.1 as u8;
+        o += hook::META_LEN;
+    }
+    Ok(())
 }
 
 /// Oracle-free rebalance. Reads last_ratio + params from Config, all 6 vaults +

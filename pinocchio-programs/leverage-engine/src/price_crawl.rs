@@ -15,8 +15,8 @@ pub const LAYOUT_NONE: u8 = 0;
 pub const LAYOUT_CPSWAP: u8 = 1;
 pub const LAYOUT_PUMPSWAP: u8 = 2;
 
-/// Ignore pools whose base-side reserve is below this (6-decimal ≈ 1k tokens).
-pub const MIN_BASE_RESERVE: u64 = 1_000_000_000;
+/// Ignore empty/dead pools (synth anchor vaults can be very thin on mainnet).
+pub const MIN_BASE_RESERVE: u64 = 100;
 
 const O_TAG: usize = 0;
 const O_CONFIG: usize = 1;

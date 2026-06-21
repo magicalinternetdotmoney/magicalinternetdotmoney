@@ -211,3 +211,8 @@ pub fn set_oracle_price_last(d: &mut [u8], price_wad: u128) {
         wr(d, O_ORACLE_PRICE_LAST, &price_wad.to_le_bytes());
     }
 }
+pub fn set_oracle_kind(d: &mut [u8], kind: u8) {
+    if d.len() > O_ORACLE_KIND {
+        d[O_ORACLE_KIND] = kind;
+    }
+}

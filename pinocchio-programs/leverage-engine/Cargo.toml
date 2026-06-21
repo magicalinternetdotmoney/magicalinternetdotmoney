@@ -9,7 +9,7 @@ crate-type = ["cdylib", "lib"]
 name = "leverage_engine_pinocchio"
 
 [dependencies]
-pinocchio = { version = "0.11", features = ["cpi"] }
+pinocchio = { version = "0.11", features = ["cpi", "account-resize"] }
 pinocchio-token = "0.6"
 pinocchio-system = "0.6"
 leverage-math = { path = "../../crates/leverage-math" }
