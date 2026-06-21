@@ -725,12 +725,15 @@ fn init_extra_account_metas(program_id: &Address, accounts: &mut [AccountView], 
 
 /// Deposit USDC → add liquidity to the A/USDC pool → protocol LP → mint receipt.
 ///
-/// accounts: 0 user(signer,w) 1 config(w) 2 authority 3 usdc_mint 4 mint_a(w)
+/// Deposit quote into one anchor pool (+/USDC or −/USDC). Call twice (A then B) to
+/// fan the user's quote across both legs; receipt mints 1:1 with each pool's LP.
+///
+/// accounts: 0 user(signer,w) 1 config(w) 2 authority 3 usdc_mint 4 mint_synth(w)
 ///           5 receipt_mint(w) 6 user_usdc(w) 7 protocol_usdc(w) 8 user_receipt(w)
-///           9 protocol_a(w) 10 protocol_lp(w) 11 pool_a_usdc(w) 12 lp_mint(w)
-///           13 vault_a(w) 14 vault_usdc(w) 15 cp_authority 16 cp_program
-///           17 token_program 18 token_program_2022
-/// data: lp_amount(8) usdc_amount(8) max_a(8)
+///           9 protocol_synth(w) 10 protocol_lp(w) 11 pool(w) 12 lp_mint(w)
+///           13 vault_synth(w) 14 vault_usdc(w) 15 cp_authority 16 cp_program
+///           17 token_program 18 token_program_2022 [19 fee_vault(w) optional]
+/// data: lp_amount(8) usdc_amount(8) max_synth(8)
 fn deposit(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
     if accounts.len() < 19 {
         return Err(ProgramError::NotEnoughAccountKeys);
@@ -739,16 +742,16 @@ fn deposit(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
     let cfg = &accounts[1];
     let authority = &accounts[2];
     let usdc_mint = &accounts[3];
-    let mint_a = &accounts[4];
+    let mint_synth = &accounts[4];
     let receipt_mint = &accounts[5];
     let user_usdc = &accounts[6];
     let protocol_usdc = &accounts[7];
     let user_receipt = &accounts[8];
-    let protocol_a = &accounts[9];
+    let protocol_synth = &accounts[9];
     let protocol_lp = &accounts[10];
     let pool = &accounts[11];
     let lp_mint = &accounts[12];
-    let vault_a = &accounts[13];
+    let vault_synth = &accounts[13];
     let vault_usdc = &accounts[14];
     let cp_authority = &accounts[15];
     let token_program = &accounts[17];
@@ -756,17 +759,19 @@ fn deposit(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
 
     let lp_amount = du64(d, 0)?;
     let usdc_amount = du64(d, 8)?;
-    let max_a = du64(d, 16)?;
+    let max_synth = du64(d, 16)?;
 
     let (auth_bump, paused) = {
         let data = cfg.try_borrow()?;
         let c = Config::load(&data)?;
-        // multi-pair safety: the passed mints + pool must match THIS config's pair,
-        // so a deposit can't mix one pair's config with another's mints.
+        // multi-pair safety: synth mint + pool must be a matched leg of THIS config.
+        let leg_a = *mint_synth.address() == c.mint_a()?
+            && *pool.address() == c.pool_a_usdc()?;
+        let leg_b = *mint_synth.address() == c.mint_b()?
+            && *pool.address() == c.pool_b_usdc()?;
         if *usdc_mint.address() != c.usdc_mint()?
-            || *mint_a.address() != c.mint_a()?
             || *receipt_mint.address() != c.receipt_mint()?
-            || *pool.address() != c.pool_a_usdc()?
+            || (!leg_a && !leg_b)
         {
             return Err(ProgramError::InvalidAccountData);
         }
@@ -795,12 +800,12 @@ fn deposit(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
             }
         }
     }
-    // 2. mint the matching A side (legacy SPL Token; we are mint authority)
-    MintTo::new(mint_a, protocol_a, authority, max_a).invoke_signed(&[Signer::from(&seeds)])?;
+    // 2. mint the matching synthetic leg (legacy SPL Token; we are mint authority)
+    MintTo::new(mint_synth, protocol_synth, authority, max_synth).invoke_signed(&[Signer::from(&seeds)])?;
     // 3. add liquidity → protocol LP
     cpswap_cpi::deposit(
-        lp_amount, max_a, usdc_amount, authority, cp_authority, pool, protocol_lp, protocol_a,
-        protocol_usdc, vault_a, vault_usdc, mint_a, usdc_mint, lp_mint, token_program,
+        lp_amount, max_synth, usdc_amount, authority, cp_authority, pool, protocol_lp, protocol_synth,
+        protocol_usdc, vault_synth, vault_usdc, mint_synth, usdc_mint, lp_mint, token_program,
         token_program_2022, &seeds,
     )?;
     // 4. mint receipt (Token-2022, 1:1 with LP) to the user
@@ -815,12 +820,13 @@ fn deposit(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
     Ok(())
 }
 
-/// Withdraw: burn receipt → CP-Swap withdraw the LP → return USDC to the user.
+/// Withdraw one anchor leg: burn receipt → CP-Swap withdraw LP → return USDC.
+/// Call twice (A then B) to fully redeem a fan-out deposit.
 ///
-/// accounts: 0 user(signer,w) 1 config(w) 2 authority 3 usdc_mint 4 mint_a(w)
+/// accounts: 0 user(signer,w) 1 config(w) 2 authority 3 usdc_mint 4 mint_synth(w)
 ///           5 receipt_mint(w) 6 user_usdc(w) 7 protocol_usdc(w) 8 user_receipt(w)
-///           9 protocol_a(w) 10 protocol_lp(w) 11 pool_a_usdc(w) 12 lp_mint(w)
-///           13 vault_a(w) 14 vault_usdc(w) 15 cp_authority 16 cp_program
+///           9 protocol_synth(w) 10 protocol_lp(w) 11 pool(w) 12 lp_mint(w)
+///           13 vault_synth(w) 14 vault_usdc(w) 15 cp_authority 16 cp_program
 ///           17 token_program 18 token_program_2022 19 memo_program
 /// data: receipt_amount(8)
 fn withdraw(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
@@ -831,16 +837,16 @@ fn withdraw(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
     let cfg = &accounts[1];
     let authority = &accounts[2];
     let usdc_mint = &accounts[3];
-    let mint_a = &accounts[4];
+    let mint_synth = &accounts[4];
     let receipt_mint = &accounts[5];
     let user_usdc = &accounts[6];
     let protocol_usdc = &accounts[7];
     let user_receipt = &accounts[8];
-    let protocol_a = &accounts[9];
+    let protocol_synth = &accounts[9];
     let protocol_lp = &accounts[10];
     let pool = &accounts[11];
     let lp_mint = &accounts[12];
-    let vault_a = &accounts[13];
+    let vault_synth = &accounts[13];
     let vault_usdc = &accounts[14];
     let cp_authority = &accounts[15];
     let token_program = &accounts[17];
@@ -851,10 +857,13 @@ fn withdraw(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
     let auth_bump = {
         let data = cfg.try_borrow()?;
         let c = Config::load(&data)?;
+        let leg_a = *mint_synth.address() == c.mint_a()?
+            && *pool.address() == c.pool_a_usdc()?;
+        let leg_b = *mint_synth.address() == c.mint_b()?
+            && *pool.address() == c.pool_b_usdc()?;
         if *usdc_mint.address() != c.usdc_mint()?
-            || *mint_a.address() != c.mint_a()?
             || *receipt_mint.address() != c.receipt_mint()?
-            || *pool.address() != c.pool_a_usdc()?
+            || (!leg_a && !leg_b)
         {
             return Err(ProgramError::InvalidAccountData);
         }
@@ -868,8 +877,8 @@ fn withdraw(accounts: &mut [AccountView], d: &[u8]) -> ProgramResult {
     // 2. redeem the matching LP (receipt is 1:1 with LP)
     let usdc_before = token_amount(protocol_usdc)?;
     cpswap_cpi::withdraw(
-        receipt_amount, 0, 0, authority, cp_authority, pool, protocol_lp, protocol_a,
-        protocol_usdc, vault_a, vault_usdc, mint_a, usdc_mint, lp_mint, token_program,
+        receipt_amount, 0, 0, authority, cp_authority, pool, protocol_lp, protocol_synth,
+        protocol_usdc, vault_synth, vault_usdc, mint_synth, usdc_mint, lp_mint, token_program,
         token_program_2022, memo_program, &seeds,
     )?;
     let usdc_after = token_amount(protocol_usdc)?;

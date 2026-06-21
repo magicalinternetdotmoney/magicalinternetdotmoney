@@ -148,22 +148,30 @@ describe("pinocchio deposit/withdraw round-trip (surfpool fork)", () => {
       await mintTo(conn, payer, m, ata.address, wallet.publicKey, INIT * 20n);
     }
     const poolAU = poolOf(A, U);
-    await provider.sendAndConfirm(
-      new Transaction().add(
-        ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
-        initPoolIx(wallet.publicKey, A, U, INIT),
-      ),
-      [],
-      { skipPreflight: true },
-    );
-    await setAuthority(
-      conn,
-      payer,
-      A,
-      wallet.publicKey,
-      AuthorityType.MintTokens,
-      authority,
-    );
+    const poolBU = poolOf(B, U);
+    for (const ix of [
+      initPoolIx(wallet.publicKey, A, U, INIT),
+      initPoolIx(wallet.publicKey, B, U, INIT),
+    ]) {
+      await provider.sendAndConfirm(
+        new Transaction().add(
+          ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+          ix,
+        ),
+        [],
+        { skipPreflight: true },
+      );
+    }
+    for (const m of [A, B]) {
+      await setAuthority(
+        conn,
+        payer,
+        m,
+        wallet.publicKey,
+        AuthorityType.MintTokens,
+        authority,
+      );
+    }
     await setAuthority(
       conn,
       payer,
@@ -176,9 +184,12 @@ describe("pinocchio deposit/withdraw round-trip (surfpool fork)", () => {
       TOKEN_2022_PROGRAM_ID,
     );
 
-    const lpMint = lpOf(poolAU);
-    const vaultA = vaultOf(poolAU, A),
-      vaultU = vaultOf(poolAU, U);
+    const lpMintAU = lpOf(poolAU);
+    const lpMintBU = lpOf(poolBU);
+    const vaultAuA = vaultOf(poolAU, A),
+      vaultAuU = vaultOf(poolAU, U);
+    const vaultBuB = vaultOf(poolBU, B),
+      vaultBuU = vaultOf(poolBU, U);
     // protocol-owned accounts (authority PDA, off-curve)
     const protoUsdc = (
       await getOrCreateAssociatedTokenAccount(conn, payer, U, authority, true)
@@ -186,11 +197,23 @@ describe("pinocchio deposit/withdraw round-trip (surfpool fork)", () => {
     const protoA = (
       await getOrCreateAssociatedTokenAccount(conn, payer, A, authority, true)
     ).address;
-    const protoLp = (
+    const protoB = (
+      await getOrCreateAssociatedTokenAccount(conn, payer, B, authority, true)
+    ).address;
+    const protoLpAU = (
       await getOrCreateAssociatedTokenAccount(
         conn,
         payer,
-        lpMint,
+        lpMintAU,
+        authority,
+        true,
+      )
+    ).address;
+    const protoLpBU = (
+      await getOrCreateAssociatedTokenAccount(
+        conn,
+        payer,
+        lpMintBU,
         authority,
         true,
       )
@@ -225,7 +248,7 @@ describe("pinocchio deposit/withdraw round-trip (surfpool fork)", () => {
             k(receipt, false),
             k(poolOf(A, B), false),
             k(poolAU, false),
-            k(poolOf(B, U), false),
+            k(poolBU, false),
             k(SystemProgram.programId, false),
           ],
           data: Buffer.concat([
@@ -243,76 +266,134 @@ describe("pinocchio deposit/withdraw round-trip (surfpool fork)", () => {
       { skipPreflight: true },
     );
 
-    // --- DEPOSIT ---
-    const usdcReserve = (await getAccount(conn, vaultU)).amount;
-    const aReserve = (await getAccount(conn, vaultA)).amount;
-    const lpSupply = (await getMint(conn, lpMint)).supply;
-    const usdcAmount = 100_000_000n;
-    const lpAmount = (usdcAmount * lpSupply) / usdcReserve;
-    const maxA = (((aReserve * lpAmount) / lpSupply) * 12n) / 10n; // +20% buffer
+    // --- DEPOSIT (50/50 fan-out across A/Q + B/Q) ---
+    const legDeposit = async (
+      synth: PublicKey,
+      pool: PublicKey,
+      lpMint: PublicKey,
+      vaultSynth: PublicKey,
+      vaultU: PublicKey,
+      protoSynth: PublicKey,
+      protoLp: PublicKey,
+      usdcAmount: bigint,
+    ) => {
+      const usdcReserve = (await getAccount(conn, vaultU)).amount;
+      const synthReserve = (await getAccount(conn, vaultSynth)).amount;
+      const lpSupply = (await getMint(conn, lpMint)).supply;
+      const lpAmount = (usdcAmount * lpSupply) / usdcReserve;
+      const maxSynth = (((synthReserve * lpAmount) / lpSupply) * 12n) / 10n;
+      await provider.sendAndConfirm(
+        new Transaction().add(
+          ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+          new TransactionInstruction({
+            programId: PROGRAM,
+            keys: [
+              k(wallet.publicKey, true, true),
+              k(config, true),
+              k(authority, false),
+              k(U, false),
+              k(synth, true),
+              k(receipt, true),
+              k(userUsdc, true),
+              k(protoUsdc, true),
+              k(userReceipt, true),
+              k(protoSynth, true),
+              k(protoLp, true),
+              k(pool, true),
+              k(lpMint, true),
+              k(vaultSynth, true),
+              k(vaultU, true),
+              k(cpAuth(), false),
+              k(CP, false),
+              k(TOKEN_PROGRAM_ID, false),
+              k(TOKEN_2022_PROGRAM_ID, false),
+            ],
+            data: Buffer.concat([
+              Buffer.from([2]),
+              u64(lpAmount),
+              u64(usdcAmount),
+              u64(maxSynth),
+            ]),
+          }),
+        ),
+        [],
+        { skipPreflight: true },
+      );
+      return lpAmount;
+    };
 
-    const depKeys = [
-      k(wallet.publicKey, true, true),
-      k(config, true),
-      k(authority, false),
-      k(U, false),
-      k(A, true),
-      k(receipt, true),
-      k(userUsdc, true),
-      k(protoUsdc, true),
-      k(userReceipt, true),
-      k(protoA, true),
-      k(protoLp, true),
-      k(poolAU, true),
-      k(lpMint, true),
-      k(vaultA, true),
-      k(vaultU, true),
-      k(cpAuth(), false),
-      k(CP, false),
-      k(TOKEN_PROGRAM_ID, false),
-      k(TOKEN_2022_PROGRAM_ID, false),
-    ];
-    await provider.sendAndConfirm(
-      new Transaction().add(
-        ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
-        new TransactionInstruction({
-          programId: PROGRAM,
-          keys: depKeys,
-          data: Buffer.concat([
-            Buffer.from([2]),
-            u64(lpAmount),
-            u64(usdcAmount),
-            u64(maxA),
-          ]),
-        }),
-      ),
-      [],
-      { skipPreflight: true },
+    const usdcTotal = 100_000_000n;
+    const usdcA = usdcTotal / 2n;
+    const usdcB = usdcTotal - usdcA;
+    const lpA = await legDeposit(
+      A, poolAU, lpMintAU, vaultAuA, vaultAuU, protoA, protoLpAU, usdcA,
+    );
+    const lpB = await legDeposit(
+      B, poolBU, lpMintBU, vaultBuB, vaultBuU, protoB, protoLpBU, usdcB,
     );
 
     const receiptBal = (await getAccount(conn, userReceipt, undefined, TOKEN_2022_PROGRAM_ID)).amount;
-    const protoLpBal = (await getAccount(conn, protoLp)).amount;
+    const protoLpAuBal = (await getAccount(conn, protoLpAU)).amount;
+    const protoLpBuBal = (await getAccount(conn, protoLpBU)).amount;
     console.log(
-      `    >>> deposit: receipt minted=${receiptBal}, protocol LP=${protoLpBal}`,
+      `    >>> deposit fan-out: receipt=${receiptBal}, LP A/Q=${protoLpAuBal}, LP B/Q=${protoLpBuBal}`,
     );
-    assert.equal(receiptBal, lpAmount, "receipt != lp minted");
-    assert.ok(protoLpBal >= lpAmount, "protocol did not receive LP");
+    assert.equal(receiptBal, lpA + lpB, "receipt != sum of per-leg LP");
+    assert.ok(protoLpAuBal >= lpA && protoLpBuBal >= lpB, "protocol missing LP");
 
-    // --- WITHDRAW ---
+    // --- WITHDRAW (proportional across both legs) ---
     const userUsdcBefore = (await getAccount(conn, userUsdc)).amount;
-    const wdKeys = [...depKeys, k(MEMO, false)];
-    await provider.sendAndConfirm(
-      new Transaction().add(
-        ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
-        new TransactionInstruction({
-          programId: PROGRAM,
-          keys: wdKeys,
-          data: Buffer.concat([Buffer.from([3]), u64(receiptBal)]),
-        }),
-      ),
-      [],
-      { skipPreflight: true },
+    const totalLp = protoLpAuBal + protoLpBuBal;
+    const burnA = (receiptBal * protoLpAuBal) / totalLp;
+    const burnB = receiptBal - burnA;
+
+    const wdLeg = (
+      synth: PublicKey,
+      pool: PublicKey,
+      lpMint: PublicKey,
+      vaultSynth: PublicKey,
+      vaultU: PublicKey,
+      protoSynth: PublicKey,
+      protoLp: PublicKey,
+      amount: bigint,
+    ) =>
+      new TransactionInstruction({
+        programId: PROGRAM,
+        keys: [
+          k(wallet.publicKey, true, true),
+          k(config, true),
+          k(authority, false),
+          k(U, false),
+          k(synth, true),
+          k(receipt, true),
+          k(userUsdc, true),
+          k(protoUsdc, true),
+          k(userReceipt, true),
+          k(protoSynth, true),
+          k(protoLp, true),
+          k(pool, true),
+          k(lpMint, true),
+          k(vaultSynth, true),
+          k(vaultU, true),
+          k(cpAuth(), false),
+          k(CP, false),
+          k(TOKEN_PROGRAM_ID, false),
+          k(TOKEN_2022_PROGRAM_ID, false),
+          k(MEMO, false),
+        ],
+        data: Buffer.concat([Buffer.from([3]), u64(amount)]),
+      });
+
+    const wdTx = new Transaction().add(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 700_000 }),
     );
+    if (burnA > 0n) {
+      wdTx.add(wdLeg(A, poolAU, lpMintAU, vaultAuA, vaultAuU, protoA, protoLpAU, burnA));
+    }
+    if (burnB > 0n) {
+      wdTx.add(wdLeg(B, poolBU, lpMintBU, vaultBuB, vaultBuU, protoB, protoLpBU, burnB));
+    }
+    await provider.sendAndConfirm(wdTx, [], { skipPreflight: true });
 
     const receiptAfter = (await getAccount(conn, userReceipt, undefined, TOKEN_2022_PROGRAM_ID)).amount;
     const userUsdcAfter = (await getAccount(conn, userUsdc)).amount;

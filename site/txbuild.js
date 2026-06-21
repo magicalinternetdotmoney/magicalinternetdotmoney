@@ -211,97 +211,191 @@ async function hookMetaExists(conn, programId, receiptMint) {
   return !!(ai && ai.owner.equals(new PublicKey(programId)));
 }
 
-// read a token-account amount + a mint supply via getMultipleAccounts (jsonParsed)
-async function readReserves(conn, vaultA, vaultU, lpMint) {
-  const r = await conn.getMultipleAccountsInfo([vaultA, vaultU, lpMint], "confirmed");
-  const amt = (ai) => BigInt(splToken.unpackAccount(vaultA, ai).amount); // amount field same offset
-  // unpackAccount needs the right program; vaults are CP-Swap token accounts (legacy or T22).
-  const rawAmt = (ai) => ai.data.readBigUInt64LE(64);
-  const rawSupply = (ai) => ai.data.readBigUInt64LE(36);
-  return { aRes: rawAmt(r[0]), uRes: rawAmt(r[1]), lpSupply: rawSupply(r[2]) };
+// read vault reserves + LP supply for one anchor pool
+async function readReserves(conn, vaultSynth, vaultU, lpMint) {
+  const r = await conn.getMultipleAccountsInfo([vaultSynth, vaultU, lpMint], "confirmed");
+  const rawAmt = (ai) => (ai ? ai.data.readBigUInt64LE(64) : 0n);
+  const rawSupply = (ai) => (ai ? ai.data.readBigUInt64LE(36) : 0n);
+  return { synthRes: rawAmt(r[0]), uRes: rawAmt(r[1]), lpSupply: rawSupply(r[2]) };
 }
 
-// Build a deposit tx: user provides `usdcAmount` (base units), receives receipt 1:1 with LP.
-async function buildDeposit(conn, { programId, user, pair, usdcAmount, slippageBps = 100 }) {
+async function protoLpBalance(conn, authority, lpMint) {
+  const ata = getAssociatedTokenAddressSync(lpMint, authority, true);
+  const ai = await conn.getAccountInfo(ata, "confirmed");
+  return ai ? ai.data.readBigUInt64LE(64) : 0n;
+}
+
+function legDepositMath({ synthRes, uRes, lpSupply, usdc, slippageBps }) {
+  if (uRes === 0n || lpSupply === 0n) throw new Error("pool not seeded");
+  const lpAmount = (usdc * lpSupply) / uRes;
+  if (lpAmount === 0n) throw new Error("amount too small");
+  const synthNeeded = (synthRes * lpAmount) / lpSupply;
+  const maxSynth = synthNeeded + (synthNeeded * BigInt(slippageBps)) / 10000n + 1n;
+  return { lpAmount, maxSynth };
+}
+
+function depositLegIx({
+  PROGRAM, config, authority, owner, usdcMint, mintSynth, receipt,
+  pool, lpMint, vaultSynth, vaultU, userUsdc, protoUsdc, userReceipt,
+  protoSynth, protoLp, lpAmount, usdc, maxSynth, feeVault,
+}) {
+  const keys = [
+    k(owner, true, true), k(config, true), k(authority, false), k(usdcMint, false), k(mintSynth, true),
+    k(receipt, true), k(userUsdc, true), k(protoUsdc, true), k(userReceipt, true), k(protoSynth, true),
+    k(protoLp, true), k(pool, true), k(lpMint, true), k(vaultSynth, true), k(vaultU, true),
+    k(cpAuth(), false), k(CP, false), k(TOKEN_PROGRAM_ID, false), k(TOKEN_2022_PROGRAM_ID, false),
+  ];
+  if (feeVault) keys.push(k(feeVault, true));
+  return new TransactionInstruction({
+    programId: PROGRAM,
+    keys,
+    data: Buffer.concat([Buffer.from([2]), u64(lpAmount), u64(usdc), u64(maxSynth)]),
+  });
+}
+
+function withdrawLegIx({
+  PROGRAM, config, authority, owner, usdcMint, mintSynth, receipt,
+  pool, lpMint, vaultSynth, vaultU, userUsdc, protoUsdc, userReceipt,
+  protoSynth, protoLp, receiptAmount,
+}) {
+  return new TransactionInstruction({
+    programId: PROGRAM,
+    keys: [
+      k(owner, true, true), k(config, true), k(authority, false), k(usdcMint, false), k(mintSynth, true),
+      k(receipt, true), k(userUsdc, true), k(protoUsdc, true), k(userReceipt, true), k(protoSynth, true),
+      k(protoLp, true), k(pool, true), k(lpMint, true), k(vaultSynth, true), k(vaultU, true),
+      k(cpAuth(), false), k(CP, false), k(TOKEN_PROGRAM_ID, false), k(TOKEN_2022_PROGRAM_ID, false), k(MEMO, false),
+    ],
+    data: Buffer.concat([Buffer.from([3]), u64(receiptAmount)]),
+  });
+}
+
+// Build a deposit tx: user USDC fans 50/50 across +/USDC and −/USDC; receipt 1:1 per-leg LP.
+async function buildDeposit(conn, { programId, user, pair, usdcAmount, slippageBps = 100, feeVault = null }) {
   const { PROGRAM, config, authority } = pdas(programId, pair);
   const usdcMint = new PublicKey(pair.quoteMint);
   const mintA = new PublicKey(pair.mintA);
+  const mintB = new PublicKey(pair.mintB);
   const receipt = new PublicKey(pair.receiptMint);
-  const pool = new PublicKey(pair.pools.aq.pool);
+  const poolAq = new PublicKey(pair.pools.aq.pool);
+  const poolBq = new PublicKey(pair.pools.bq.pool);
   const owner = new PublicKey(user);
-  const lpMint = lpOf(pool);
-  const vaultA = vaultOf(pool, mintA);
-  const vaultU = vaultOf(pool, usdcMint);
 
-  const { aRes, uRes, lpSupply } = await readReserves(conn, vaultA, vaultU, lpMint);
-  if (uRes === 0n || lpSupply === 0n) throw new Error("pool not seeded");
+  const lpMintAq = lpOf(poolAq);
+  const lpMintBq = lpOf(poolBq);
+  const vaultAqA = vaultOf(poolAq, mintA);
+  const vaultAqU = vaultOf(poolAq, usdcMint);
+  const vaultBqB = vaultOf(poolBq, mintB);
+  const vaultBqU = vaultOf(poolBq, usdcMint);
+
+  const [resAq, resBq] = await Promise.all([
+    readReserves(conn, vaultAqA, vaultAqU, lpMintAq),
+    readReserves(conn, vaultBqB, vaultBqU, lpMintBq),
+  ]);
+
   const usdc = BigInt(usdcAmount);
-  // proportional add: lp minted ∝ usdc/uReserve; A needed ∝ lp/lpSupply.
-  const lpAmount = (usdc * lpSupply) / uRes;
-  if (lpAmount === 0n) throw new Error("amount too small");
-  const aNeeded = (aRes * lpAmount) / lpSupply;
-  const maxA = aNeeded + (aNeeded * BigInt(slippageBps)) / 10000n + 1n;
+  const usdcA = usdc / 2n;
+  const usdcB = usdc - usdcA;
+  const legA = legDepositMath({ ...resAq, usdc: usdcA, slippageBps });
+  const legB = legDepositMath({ ...resBq, usdc: usdcB, slippageBps });
 
   const protoUsdc = getAssociatedTokenAddressSync(usdcMint, authority, true);
   const protoA = getAssociatedTokenAddressSync(mintA, authority, true);
-  const protoLp = getAssociatedTokenAddressSync(lpMint, authority, true);
+  const protoB = getAssociatedTokenAddressSync(mintB, authority, true);
+  const protoLpAq = getAssociatedTokenAddressSync(lpMintAq, authority, true);
+  const protoLpBq = getAssociatedTokenAddressSync(lpMintBq, authority, true);
   const userUsdc = getAssociatedTokenAddressSync(usdcMint, owner);
   const userReceipt = getAssociatedTokenAddressSync(receipt, owner, false, TOKEN_2022_PROGRAM_ID);
+  const feeVaultPk = feeVault ? new PublicKey(feeVault) : null;
 
   const ixs = [
-    ComputeBudgetProgram.setComputeUnitLimit({ units: 350_000 }),
-    // make sure the protocol + user receipt ATAs exist (idempotent)
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 700_000 }),
     createAssociatedTokenAccountIdempotentInstruction(owner, protoUsdc, authority, usdcMint, TOKEN_PROGRAM_ID),
     createAssociatedTokenAccountIdempotentInstruction(owner, protoA, authority, mintA, TOKEN_PROGRAM_ID),
-    createAssociatedTokenAccountIdempotentInstruction(owner, protoLp, authority, lpMint, TOKEN_PROGRAM_ID),
+    createAssociatedTokenAccountIdempotentInstruction(owner, protoB, authority, mintB, TOKEN_PROGRAM_ID),
+    createAssociatedTokenAccountIdempotentInstruction(owner, protoLpAq, authority, lpMintAq, TOKEN_PROGRAM_ID),
+    createAssociatedTokenAccountIdempotentInstruction(owner, protoLpBq, authority, lpMintBq, TOKEN_PROGRAM_ID),
     createAssociatedTokenAccountIdempotentInstruction(owner, userReceipt, owner, receipt, TOKEN_2022_PROGRAM_ID),
-    new TransactionInstruction({
-      programId: PROGRAM,
-      keys: [
-        k(owner, true, true), k(config, true), k(authority, false), k(usdcMint, false), k(mintA, true),
-        k(receipt, true), k(userUsdc, true), k(protoUsdc, true), k(userReceipt, true), k(protoA, true),
-        k(protoLp, true), k(pool, true), k(lpMint, true), k(vaultA, true), k(vaultU, true),
-        k(cpAuth(), false), k(CP, false), k(TOKEN_PROGRAM_ID, false), k(TOKEN_2022_PROGRAM_ID, false),
-      ],
-      data: Buffer.concat([Buffer.from([2]), u64(lpAmount), u64(usdc), u64(maxA)]),
+    depositLegIx({
+      PROGRAM, config, authority, owner, usdcMint, mintSynth: mintA, receipt,
+      pool: poolAq, lpMint: lpMintAq, vaultSynth: vaultAqA, vaultU: vaultAqU,
+      userUsdc, protoUsdc, userReceipt, protoSynth: protoA, protoLp: protoLpAq,
+      lpAmount: legA.lpAmount, usdc: usdcA, maxSynth: legA.maxSynth, feeVault: feeVaultPk,
+    }),
+    depositLegIx({
+      PROGRAM, config, authority, owner, usdcMint, mintSynth: mintB, receipt,
+      pool: poolBq, lpMint: lpMintBq, vaultSynth: vaultBqB, vaultU: vaultBqU,
+      userUsdc, protoUsdc, userReceipt, protoSynth: protoB, protoLp: protoLpBq,
+      lpAmount: legB.lpAmount, usdc: usdcB, maxSynth: legB.maxSynth, feeVault: feeVaultPk,
     }),
   ];
-  return { tx: await pack(conn, owner, ixs), lpAmount: lpAmount.toString(), maxA: maxA.toString() };
+  return {
+    tx: await pack(conn, owner, ixs),
+    usdcA: usdcA.toString(), usdcB: usdcB.toString(),
+    lpA: legA.lpAmount.toString(), lpB: legB.lpAmount.toString(),
+    receiptMinted: (legA.lpAmount + legB.lpAmount).toString(),
+  };
 }
 
-// Build a withdraw tx: burn `receiptAmount` receipt → redeem LP → USDC back to user.
+// Build a withdraw tx: burn receipt proportionally across both anchor pools.
 async function buildWithdraw(conn, { programId, user, pair, receiptAmount }) {
   const { PROGRAM, config, authority } = pdas(programId, pair);
   const usdcMint = new PublicKey(pair.quoteMint);
   const mintA = new PublicKey(pair.mintA);
+  const mintB = new PublicKey(pair.mintB);
   const receipt = new PublicKey(pair.receiptMint);
-  const pool = new PublicKey(pair.pools.aq.pool);
+  const poolAq = new PublicKey(pair.pools.aq.pool);
+  const poolBq = new PublicKey(pair.pools.bq.pool);
   const owner = new PublicKey(user);
-  const lpMint = lpOf(pool);
-  const vaultA = vaultOf(pool, mintA);
-  const vaultU = vaultOf(pool, usdcMint);
+
+  const lpMintAq = lpOf(poolAq);
+  const lpMintBq = lpOf(poolBq);
+  const vaultAqA = vaultOf(poolAq, mintA);
+  const vaultAqU = vaultOf(poolAq, usdcMint);
+  const vaultBqB = vaultOf(poolBq, mintB);
+  const vaultBqU = vaultOf(poolBq, usdcMint);
+
+  const [protoLpA, protoLpB] = await Promise.all([
+    protoLpBalance(conn, authority, lpMintAq),
+    protoLpBalance(conn, authority, lpMintBq),
+  ]);
+  const totalLp = protoLpA + protoLpB;
+  if (totalLp === 0n) throw new Error("no protocol LP to redeem");
+
+  const R = BigInt(receiptAmount);
+  const burnA = (R * protoLpA) / totalLp;
+  const burnB = R - burnA;
+  if (burnA === 0n && burnB === 0n) throw new Error("receipt amount too small");
 
   const protoUsdc = getAssociatedTokenAddressSync(usdcMint, authority, true);
   const protoA = getAssociatedTokenAddressSync(mintA, authority, true);
-  const protoLp = getAssociatedTokenAddressSync(lpMint, authority, true);
+  const protoB = getAssociatedTokenAddressSync(mintB, authority, true);
+  const protoLpAq = getAssociatedTokenAddressSync(lpMintAq, authority, true);
+  const protoLpBq = getAssociatedTokenAddressSync(lpMintBq, authority, true);
   const userUsdc = getAssociatedTokenAddressSync(usdcMint, owner);
   const userReceipt = getAssociatedTokenAddressSync(receipt, owner, false, TOKEN_2022_PROGRAM_ID);
 
   const ixs = [
-    ComputeBudgetProgram.setComputeUnitLimit({ units: 350_000 }),
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 700_000 }),
     createAssociatedTokenAccountIdempotentInstruction(owner, userUsdc, owner, usdcMint, TOKEN_PROGRAM_ID),
-    new TransactionInstruction({
-      programId: PROGRAM,
-      keys: [
-        k(owner, true, true), k(config, true), k(authority, false), k(usdcMint, false), k(mintA, true),
-        k(receipt, true), k(userUsdc, true), k(protoUsdc, true), k(userReceipt, true), k(protoA, true),
-        k(protoLp, true), k(pool, true), k(lpMint, true), k(vaultA, true), k(vaultU, true),
-        k(cpAuth(), false), k(CP, false), k(TOKEN_PROGRAM_ID, false), k(TOKEN_2022_PROGRAM_ID, false), k(MEMO, false),
-      ],
-      data: Buffer.concat([Buffer.from([3]), u64(receiptAmount)]),
-    }),
   ];
-  return { tx: await pack(conn, owner, ixs) };
+  if (burnA > 0n) {
+    ixs.push(withdrawLegIx({
+      PROGRAM, config, authority, owner, usdcMint, mintSynth: mintA, receipt,
+      pool: poolAq, lpMint: lpMintAq, vaultSynth: vaultAqA, vaultU: vaultAqU,
+      userUsdc, protoUsdc, userReceipt, protoSynth: protoA, protoLp: protoLpAq,
+      receiptAmount: burnA,
+    }));
+  }
+  if (burnB > 0n) {
+    ixs.push(withdrawLegIx({
+      PROGRAM, config, authority, owner, usdcMint, mintSynth: mintB, receipt,
+      pool: poolBq, lpMint: lpMintBq, vaultSynth: vaultBqB, vaultU: vaultBqU,
+      userUsdc, protoUsdc, userReceipt, protoSynth: protoB, protoLp: protoLpBq,
+      receiptAmount: burnB,
+    }));
+  }
+  return { tx: await pack(conn, owner, ixs), burnA: burnA.toString(), burnB: burnB.toString() };
 }
 
 async function pack(conn, payer, ixs) {
