@@ -16,6 +16,7 @@ Live site: [magicalinternet.money](https://magicalinternet.money)
 | **Rebalance price signal** | Oracle-free: implied MINTA/MINTB ratio from on-chain vault balances + supplies. **Raydium `observation_state` TWAP is not used** |
 | **Optional oracle** | PumpSwap vault read for MEME / non-Raydium underlyings (pairs can still run triangle-only) |
 | **Anchor crate** | `programs/leverage-engine` is a **stale M1 reference** (protocol-held reserves) — kept for IDL/surfpool; not what ships on mainnet |
+| **Rebalance (mainnet)** | Receipt **transfer hook** = rebalance crank: `TransferChecked` → `J345…` → mint loser into Raydium vaults — [proof tx](https://solscan.io/tx/Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w) |
 | **Site** | [magicalinternet.money](https://magicalinternet.money) indexes real on-chain state; launching a pair is **~10 wallet txs**, not one click |
 | **Design mockup** | `site/_handoff/` is a pre-build Claude design comp — not production proof |
 
@@ -39,6 +40,7 @@ curl -s https://magicalinternet.money/api/pairs | jq '.pairs | length'
   "upgradeAuthority": "CnkHq3wRSsegjpJJvvRWb1uiCJvPMAYW6b7P1Yq8FpCT",
   "rpc": "https://mainnet.helius-rpc.com/",
   "usdcMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  "memeMint": "CNBuoZWcqAvVZJCrPFF1XQXeeXJsZKj7SUKZoE6Vpump",
   "pairs": 5,
   "pairsWithReceiptSupply": 2,
   "maturity": "mainnet-alpha",
@@ -60,8 +62,8 @@ curl -s https://magicalinternet.money/api/pairs | jq '.pairs | length'
     "backfillMetaplex": "2pX8NSLA1knyhJKE6Na6y3x37YNxLM6sG6AD8LF65qeTK3wtNoTstT86jwD1mt34WPbdsCiLgfGA6JJ2Mj9rQLdD",
     "backfillReceipt": "3669NsGKkd21fw4MjZSChcU3WumVYigpvRd4kTJopU7dSY6HLVNzzVQYgCuKi2U5zDvqBfYciEDsciDgPEu4t1r2",
     "updateMetadata": "2q5V3DVx2d6pXuUCwJfGK6uKreZbjwv9w2YuPeigJNmf3BspC8osRipYyWZMFHSF1ZNBhKAaCbV7JTDjYq9kXqo3",
-    "transferHookExecute": "48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y",
-    "transferHookRebalance3xSOL": "Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w",
+    "rebalance3xSOL": "Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w",
+    "rebalanceReceiptTransfer": "48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y",
     "raydiumLpMintActivity": "3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4"
   },
   "rebalanceObservedOnMainnet": true,
@@ -70,12 +72,12 @@ curl -s https://magicalinternet.money/api/pairs | jq '.pairs | length'
     "program": "https://solscan.io/account/J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe",
     "programData": "https://solscan.io/account/F1QCWDHFBMr1BsL7CTdetpxTbQXkzwDkQVUmy3EvknE5",
     "upgradeAuthority": "https://solscan.io/account/CnkHq3wRSsegjpJJvvRWb1uiCJvPMAYW6b7P1Yq8FpCT",
+    "memeMint": "https://solscan.io/token/CNBuoZWcqAvVZJCrPFF1XQXeeXJsZKj7SUKZoE6Vpump",
     "txUrlPrefix": "https://solscan.io/tx/"
   },
   "notes": [
     "Pinocchio mainnet: deposit/withdraw CPI into Raydium CP-Swap pool vaults (see sample txs + LP mint activity).",
-    "Rebalance on mainnet = receipt transfer hook: TransferChecked → J345… → mint loser leg into Raydium vaults (see transferHookRebalance3xSOL on Solscan).",
-    "Top-level rebalance ix (tag 0) without a receipt transfer is not used on mainnet; hook path is the production crank.",
+    "Rebalance on mainnet: receipt TransferChecked → J345… → mint loser into Raydium vaults (sample rebalance3xSOL).",
     "Launch is ~10 wallet-approved txs, not a single click.",
     "site/_handoff/ is a pre-build Claude design mockup, not production proof.",
     "Public read APIs work without a wallet: /api/status, /api/pairs, /api/charts."
@@ -90,6 +92,7 @@ curl -s https://magicalinternet.money/api/pairs | jq '.pairs | length'
 | `program` | [J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe](https://solscan.io/account/J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmmsi33enqe) |
 | `programData` | [F1QCWDHFBMr1BsL7CTdetpxTbQXkzwDkQVUmy3EvknE5](https://solscan.io/account/F1QCWDHFBMr1BsL7CTdetpxTbQXkzwDkQVUmy3EvknE5) |
 | `upgradeAuthority` | [CnkHq3wRSsegjpJJvvRWb1uiCJvPMAYW6b7P1Yq8FpCT](https://solscan.io/account/CnkHq3wRSsegjpJJvvRWb1uiCJvPMAYW6b7P1Yq8FpCT) |
+| `memeMint` | [CNBuoZWcqAvVZJCrPFF1XQXeeXJsZKj7SUKZoE6Vpump](https://solscan.io/token/CNBuoZWcqAvVZJCrPFF1XQXeeXJsZKj7SUKZoE6Vpump) |
 | `raydiumLpExample.pool` (3xSOL A/B) | [6LBJej9kh2Kzgun39dvpZzrrH73XRqw7YKXS2wjR4ku5](https://solscan.io/account/6LBJej9kh2Kzgun39dvpZzrrH73XRqw7YKXS2wjR4ku5) |
 | `raydiumLpExample.lpMint` | [9Wa74CiHe12aMQyBFitjuWhRwktGZ6hoicucUhxPX2b2](https://solscan.io/account/9Wa74CiHe12aMQyBFitjuWhRwktGZ6hoicucUhxPX2b2) |
 
@@ -105,13 +108,13 @@ curl -s https://magicalinternet.money/api/pairs | jq '.pairs | length'
 | `backfillMetaplex` | [2pX8NSLA1knyhJKE6Na6y3x37YNxLM6sG6AD8LF65qeTK3wtNoTstT86jwD1mt34WPbdsCiLgfGA6JJ2Mj9rQLdD](https://solscan.io/tx/2pX8NSLA1knyhJKE6Na6y3x37YNxLM6sG6AD8LF65qeTK3wtNoTstT86jwD1mt34WPbdsCiLgfGA6JJ2Mj9rQLdD) |
 | `backfillReceipt` | [3669NsGKkd21fw4MjZSChcU3WumVYigpvRd4kTJopU7dSY6HLVNzzVQYgCuKi2U5zDvqBfYciEDsciDgPEu4t1r2](https://solscan.io/tx/3669NsGKkd21fw4MjZSChcU3WumVYigpvRd4kTJopU7dSY6HLVNzzVQYgCuKi2U5zDvqBfYciEDsciDgPEu4t1r2) |
 | `updateMetadata` | [2q5V3DVx2d6pXuUCwJfGK6uKreZbjwv9w2YuPeigJNmf3BspC8osRipYyWZMFHSF1ZNBhKAaCbV7JTDjYq9kXqo3](https://solscan.io/tx/2q5V3DVx2d6pXuUCwJfGK6uKreZbjwv9w2YuPeigJNmf3BspC8osRipYyWZMFHSF1ZNBhKAaCbV7JTDjYq9kXqo3) |
-| `transferHookExecute` | [48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y](https://solscan.io/tx/48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y) |
-| `transferHookRebalance3xSOL` | [Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w](https://solscan.io/tx/Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w) — 3xSOL receipt `2P7Aibym…`, ATA create + `TransferChecked` → `J345…` CPI |
+| **`rebalance3xSOL`** | [Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w](https://solscan.io/tx/Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w) — **rebalance via receipt transfer hook**: 1× 3xSOL receipt sent to recipient → `TransferChecked` → `J345…` → mint into Raydium vault authority (+/− legs) |
+| `rebalanceReceiptTransfer` | [48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y](https://solscan.io/tx/48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y) — earlier rebalance hook sample |
 | `raydiumLpMintActivity` | [3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4](https://solscan.io/tx/3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4) |
 
 Deposit/withdraw txs show **Raydium CP-Swap `Deposit` / `Withdraw` CPI** in logs.
 
-**Rebalance is observed on mainnet** via the **receipt transfer hook** — not a separate mechanism. [`transferHookRebalance3xSOL`](https://solscan.io/tx/Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w): `TransferChecked` on the 3xSOL receipt → `J345…` CPI → **mint into Raydium vault authority** (+/− synth legs). Sending receipt to another wallet *is* how you crank rebalance.
+**Rebalance on mainnet** = receipt transfer hook (same instruction path, not a separate feature). Send receipt to any wallet → [`rebalance3xSOL`](https://solscan.io/tx/Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w) shows `TransferChecked` → `J345…` → mint into **Raydium vault authority**.
 
 **What this proves vs. does not:**
 
@@ -143,7 +146,7 @@ The pair trades on a **triangle of three Raydium CP-Swap pools**:
 
 When one synthetic underperforms, the engine **mints more of the loser directly into both pool vaults** (pair + USDC pool) so its price drops by the same fraction in each venue — no swap, no inter-pool arb gap.
 
-A **Token-2022 transfer hook** on the receipt fires the same rebalance on every transfer (“transferrer pays”).
+The receipt is **Token-2022 with a transfer hook** — that hook *is* rebalance. Every receipt transfer runs mint-the-loser into Raydium vaults (“transferrer pays”).
 
 ---
 
@@ -232,7 +235,7 @@ Mint-the-loser **dilutes** the underperforming synthetic (intentional leverage).
 
 | Tag | Name | Who | What |
 |-----|------|-----|------|
-| 0 | `rebalance` | anyone | Permissionless crank; oracle-free mint-the-loser step |
+| 0 | `rebalance` | anyone | Mint-the-loser logic (oracle-free). **On mainnet this runs inside the receipt transfer hook**, not as a standalone wallet tx |
 | 1 | `init_config` | admin | Create Config PDA; record mints, pools, leverage params |
 | 2 | `deposit` | anyone | USDC → CP-Swap LP + receipt mint |
 | 3 | `withdraw` | anyone | Burn receipt → withdraw LP → USDC |
@@ -245,7 +248,7 @@ Mint-the-loser **dilutes** the underperforming synthetic (intentional leverage).
 | 11 | `buy_burn` | anyone | Swap accrued deposit fees (USDC) → MEME via pinned pool, then burn |
 | 12 | `seed_pair` | admin | Pair seeding helper |
 | 13–14 | `backfill_metaplex` / `backfill_receipt_t22` | admin | Metadata migration helpers |
-| — | `transfer_hook` | Token-2022 CPI | Same rebalance path on receipt transfer |
+| — | `transfer_hook` | Token-2022 CPI | **Production rebalance path** — receipt `TransferChecked` invokes program → Raydium vault mints |
 
 Token layout:
 

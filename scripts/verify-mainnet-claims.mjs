@@ -20,8 +20,8 @@ const SAMPLE_TXS = {
   initConfig: "N5RhLJYiZKHew3GRc3SgzgTQXsSer1BacEX7Tz68iMGEVMbzMJ9o4G7Wiegx8JLoFM7zVHhUmScGsrV885pAFm6",
   registerTriangle: "4VR9HkYA73Y7hckoriVYkpffrCagAe92s2qBSRKayrJAiMt5BBvUAxTExRjzWaSyuoNXEVBav2JH4CTBJHLquXZF",
   initHook: "5J8kViDMZKJkJ79Y4uwnj2tMiih5WbiTy3r6AmV59Lqx3t5Q63q85H24tzk7ZfDR7F1Lv2gKhyUUAynAnKKDmUnr",
-  transferHookExecute: "48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y",
-  transferHookRebalance3xSOL: "Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w",
+  rebalance3xSOL: "Ggs5oQaXJLxy41F9z3asMtEvfrwzCyDBv1TizGxUfUgbXXLr2gNn7BkxYqHPiKDqtrmA655gWESh6g2458CMe5w",
+  rebalanceReceiptTransfer: "48Vj2Afb9rgRP941smC5QMjeMKk7KwMjLcVDQefYpaYiDZKE87m5m8g597zQxF4MHwCvvwVebg9y8NbHEbJGRt3Y",
   raydiumLpMintActivity: "3Lb58HxGBkwE8QwxZkkw1GsKs6CLBBHbXqH34VhEShz3CLKY2nVdJ4t3gBRhMTUAX2z8yrkGh8BxBG9hgwNNupJ4",
 };
 
@@ -184,9 +184,9 @@ async function main() {
       if (kind === "initHook") {
         ok("initHook invokes program", txHasProgram(tx, PROGRAM));
       }
-      if (kind === "transferHookExecute" || kind === "transferHookRebalance3xSOL") {
+      if (kind === "rebalance3xSOL" || kind === "rebalanceReceiptTransfer") {
         const logs = (tx.meta?.logMessages || []).join("\n");
-        ok(`transfer hook: ${kind}`, /TransferChecked/.test(logs) && logs.includes(PROGRAM));
+        ok(`rebalance (hook): ${kind}`, /TransferChecked/.test(logs) && logs.includes(PROGRAM));
       }
     } catch (e) {
       ok(`tx fetch: ${kind}`, false, e.message);
