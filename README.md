@@ -5,7 +5,7 @@
 Live site: [magicalinternet.money](https://magicalinternet.money)
 
 > **Experimental · unaudited · here be dragons.**  
-> This protocol uses a “mint the loser” rebalance primitive with no restoring force. Caps, circuit breakers, and elastic leverage decay *bound* bleed; they do not eliminate tail risk. Do not deposit funds you cannot afford to lose.
+> Rebalance mints the loser into **both** the pair vault and the loser/USDC vault in lockstep — so the naive cross-venue arb (buy cheap in A/B, dump into USDC) does not apply. Remaining risks are loser dilution, LP NAV bleed on sustained moves, and operational limits below. Do not deposit funds you cannot afford to lose.
 
 ---
 
@@ -316,11 +316,20 @@ cargo test -p leverage-math
 
 ## Known risks
 
-1. **Death spiral** — minting the underperforming leg into `x·y=k` reserves pushes its price toward zero; arbs can drain USDC anchor pools.
-2. **No restoring force** — unlike perp liquidation engines, there is no margin call or ADL; only bounded mint caps and leverage decay.
-3. **Hook CU budget** — receipt transfers carry rebalance compute; large account lists require a persistent LUT in Config.
-4. **Unaudited** — no formal verification; harness tests and unit tests only.
-5. **Admin keys** — pair config, pause, and upgrade authority are high-value targets.
+### What the two-pool design fixes
+
+The naive failure mode — mint only into the A/B pool, leaving a cheaper loser in the pair than in the USDC pool — **is not how this program works**. Each rebalance mints the loser **directly into both vaults** with the invariant `amount_pair / pair_reserve ≈ amount_usdc / usdc_reserve`, so both venues move by the same fraction. External arbers cannot harvest a protocol-created price gap between those two pools.
+
+The `leverage-math` red-team drain sim (`drain_sim_protocol_never_touches_the_quote_anchor`) checks 2000 rounds: **rebalance only adds loser tokens; it never removes USDC from the anchor pools**. Quote reserves change only from external trades, not from the crank/hook path.
+
+### What remains risky
+
+1. **Loser dilution** — minting the underperformer still pushes its price down in both pools simultaneously. That is the leverage mechanism, not a bug, but sustained one-sided moves inflate loser supply and can erode LP backing per receipt.
+2. **No restoring force** — unlike perp engines, there is no margin call, liquidation, or ADL that forces deleveraging. Elastic leverage decay and per-crank caps bound mint size; they do not guarantee NAV recovery.
+3. **External market risk** — third-party swaps, routing, and macro moves still affect pool reserves and receipt NAV. The protocol does not immunize LPs against bad underlying performance.
+4. **Hook CU budget** — receipt transfers carry rebalance compute; large account lists require a persistent LUT in Config.
+5. **Unaudited** — no formal verification; harness tests, unit tests, and the red-team sim above only.
+6. **Admin keys** — pair config, pause, and upgrade authority are high-value targets.
 
 ---
 
