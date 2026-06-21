@@ -10,6 +10,7 @@ const PROGRAM = process.env.PROGRAM_ID || "J345oy4ctuut7vu9zABu9UeuSQSptVeQjmmms
 const PAIR_HINTS = {
   "2P7AibymfoondMnceAQzH7iJuiHjDpSmDP3UiYh1pTvB": { sym: "3xSOL", name: "3x SOL LP", underlyingSymbol: "SOL" },
   "EJf2gAc6QtNLd5nhq97GxMDxFXTULEPbWHKTaUzr8KVG": { sym: "5xBTC", name: "5x BTC LP", underlyingSymbol: "cbBTC" },
+  "CQzeyuxa3cUPjQd2MagKGtQhCb8jgzHverFsCC9aehnM": { sym: "10xSPCXx", name: "10x SPCXx LP", underlyingSymbol: "SPCXx" },
 };
 
 function signOk(symbol, want) {

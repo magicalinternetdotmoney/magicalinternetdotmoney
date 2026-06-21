@@ -12,6 +12,7 @@ const KEY = process.env.ADMIN_KEY || process.argv.find((a) => a.endsWith(".json"
 const PAIR_HINTS = {
   "2P7AibymfoondMnceAQzH7iJuiHjDpSmDP3UiYh1pTvB": { sym: "3xSOL", name: "3x SOL LP", underlyingSymbol: "SOL" },
   "EJf2gAc6QtNLd5nhq97GxMDxFXTULEPbWHKTaUzr8KVG": { sym: "5xBTC", name: "5x BTC LP", underlyingSymbol: "cbBTC" },
+  "CQzeyuxa3cUPjQd2MagKGtQhCb8jgzHverFsCC9aehnM": { sym: "10xSPCXx", name: "10x SPCXx LP", underlyingSymbol: "SPCXx" },
 };
 
 function arg(name, def) {

@@ -196,7 +196,7 @@
     if (!logo) return "";
     border = border != null ? border : (size >= 28 ? "2px solid rgba(255,255,255,0.1)" : "1px solid rgba(255,255,255,0.12)");
     return '<span style="flex:none; width:' + size + "px; height:" + size + "px; border-radius:50%; overflow:hidden; border:" + border + '; background:#14141e; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 0 0 1px rgba(0,0,0,0.35);">' +
-      '<img src="' + esc(logo) + '" alt="" referrerpolicy="no-referrer" style="width:100%; height:100%; object-fit:cover; display:block;"/>' +
+      '<img src="' + esc(logo) + '" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'" style="width:100%; height:100%; object-fit:cover; display:block;"/>' +
       "</span>";
   }
   function glyphIcon(glyph, bg, size) {

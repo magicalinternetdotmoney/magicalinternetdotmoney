@@ -138,7 +138,10 @@ const SYM_TO_MINT = {
   BTC: "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij", cbBTC: "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij",
   ETH: "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs",
   BONK: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+  SPCXx: "Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8", // Backed SpaceX xStock
+  SPCX: "SPCXxcqXj6e5dJDVNovHN8744zkbhM2bYudU45BimGb",
 };
+const RAYDIUM_ICON = (mint) => "https://img-v1.raydium.io/icon/" + mint + ".png";
 function resolveUnderlyingMint(p) {
   if (p.underlyingMint) return p.underlyingMint;
   const us = p.underlyingSymbol;
@@ -166,20 +169,39 @@ async function jupiterSearchSymbol(sym) {
   } catch (e) { /* fall through */ }
   return null;
 }
+async function dexscreenerLogoByMint(mint) {
+  if (!mint) return null;
+  const ui = await underlyingInfo(mint);
+  if (ui && ui.logo) return ui.logo;
+  try {
+    const data = await httpsGetJson("api.dexscreener.com", "/latest/dex/tokens/" + mint);
+    const hit = ((data.pairs || []).filter((p) => p && p.chainId === "solana")
+      .sort((a, b) => ((b.liquidity && b.liquidity.usd) || 0) - ((a.liquidity && a.liquidity.usd) || 0)))[0];
+    if (hit && hit.info && hit.info.imageUrl) return hit.info.imageUrl;
+  } catch (e) { /* no dexscreener hit */ }
+  return RAYDIUM_ICON(mint);
+}
 async function dexscreenerLogoBySymbol(sym) {
   if (!sym) return null;
   try {
     const data = await httpsGetJson("api.dexscreener.com", "/latest/dex/search?q=" + encodeURIComponent(sym));
-    const want = sym.toUpperCase().replace(/X$/, ""); // SPCXx → SPCX
-    const pairs = (data.pairs || []).filter((p) => p && p.chainId === "solana");
+    const want = sym.toUpperCase();
+    const base = want.replace(/X$/, ""); // SPCXx → SPCX
+    const pairs = (data.pairs || []).filter((p) => p && p.chainId === "solana")
+      .sort((a, b) => ((b.liquidity && b.liquidity.usd) || 0) - ((a.liquidity && a.liquidity.usd) || 0));
+    const hits = [];
     for (const p of pairs) {
       for (const tok of [p.baseToken, p.quoteToken]) {
         if (!tok || !tok.address) continue;
         const ts = (tok.symbol || "").toUpperCase();
-        if (ts === sym.toUpperCase() || ts === want || ts + "X" === sym.toUpperCase()) {
-          return "https://cdn.dexscreener.com/tokens/solana/" + tok.address + ".png";
-        }
+        const score = ts === want ? 3 : (ts + "X" === want ? 2 : (ts === base ? 1 : 0));
+        if (score) hits.push({ mint: tok.address, score, liq: (p.liquidity && p.liquidity.usd) || 0 });
       }
+    }
+    hits.sort((a, b) => b.score - a.score || b.liq - a.liq);
+    for (const h of hits) {
+      const logo = await dexscreenerLogoByMint(h.mint);
+      if (logo) return logo;
     }
   } catch (e) { /* no dexscreener hit */ }
   return null;
