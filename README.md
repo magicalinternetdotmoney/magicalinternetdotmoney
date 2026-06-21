@@ -5,7 +5,7 @@
 Live site: [magicalinternet.money](https://magicalinternet.money)
 
 > **Experimental · unaudited · here be dragons.**  
-> Rebalance mints the loser into **both** the pair vault and the loser/USDC vault in lockstep — so the naive cross-venue arb (buy cheap in A/B, dump into USDC) does not apply. Remaining risks are loser dilution, LP NAV bleed on sustained moves, and operational limits below. Do not deposit funds you cannot afford to lose.
+> Rebalance mints the loser into **both** the pair vault and the loser/USDC vault in lockstep — the naive cross-venue arb (buy cheap in A/B, dump into USDC) does not apply. LPs earn from **Raydium swap fees + external arb volume** as synths trade on Jupiter; that is the economic loop, not a formal guarantee against sustained one-sided moves. Do not deposit funds you cannot afford to lose.
 
 ---
 
@@ -75,11 +75,25 @@ No external oracle. Rebalance reads **on-chain state only**:
 
 From these, `leverage_math::implied_market` derives the **MINTA/MINTB price ratio**. If the ratio fell since the last rebalance, MINTA underperformed → mint MINTA; if it rose, mint MINTB.
 
-### Elastic leverage
+### Rebalance mechanics
 
-Target leverage floats in `[L_min, L_max]` (default 2x–5x) and **decays** toward `L_min` as the loser’s minted supply grows relative to its reserve — damping that prevents a first-move runaway to zero.
+**Two-pool mint.** The loser is minted directly into both vaults it lives in (A/B pair + loser/USDC) with matched fractions: `amount_pair / pair_reserve ≈ amount_usdc / usdc_reserve`. Both venues move together — no protocol-created price gap to arb between them. Rebalance only **adds** loser tokens; it never pulls USDC out of anchor pools (see red-team test `drain_sim_protocol_never_touches_the_quote_anchor`).
 
-Per crank, only a fraction of the ratio gap is absorbed (`CRANK_ABSORB_BPS = 30%`), with move sizing clamped between 0.75% and 2.0%.
+**Elastic leverage decay** (`elastic_leverage_bps`) is a **safety throttle**, not a bug: as loser supply grows relative to reserve, target leverage falls from `L_max` toward `L_min` (default 5x → 2x), so an already-inflated side cannot keep getting hammered at full power. AMM fees do not change this math — they are a separate LP revenue stream (below).
+
+**Crank pacing.** Per fire, only 30% of the ratio gap is absorbed (`CRANK_ABSORB_BPS`), with move sizing clamped between 0.75% and 2.0%.
+
+### LP economics (fees + arb)
+
+Receipt holders own the protocol's CP-Swap LP positions. Their yield comes from:
+
+| Source | What it does |
+|--------|----------------|
+| **Raydium swap fees** | Every Jupiter/Flux swap through the triangle pays CP-Swap fees → accrues to LP → grows receipt NAV |
+| **External arb** | Traders correct mispricing between pools and external markets → volume + fees |
+| **Deposit skim** | Optional `fee_bps` on deposit → `fee_vault` → permissionless `buy_burn` (USDC → MEME swap + burn) |
+
+Mint-the-loser **dilutes** the underperforming synthetic (intentional leverage). Fees and arb **compensate** LPs for providing that exposure — the site APY is observed NAV growth from real pool state. High volume can offset dilution; low volume or a sustained one-sided trend can still erode backing per receipt. There is no margin call or ADL — the upside case is trading activity, not a mechanical price restore.
 
 ### Safety rails
 
@@ -114,7 +128,7 @@ Per crank, only a fraction of the ratio gap is absorbed (`CRANK_ABSORB_BPS = 30%
 | 7 | `init_extra_account_metas` | admin | Wire transfer-hook extra accounts for receipt |
 | 8–9 | `init_lut` / `extend_lut` | admin | PDA-owned address lookup table for v0 txs |
 | 10 | `validate_mints` | admin | Mint validation helper |
-| 11 | `buy_burn` | anyone | Buy-and-burn utility ix |
+| 11 | `buy_burn` | anyone | Swap accrued deposit fees (USDC) → MEME via pinned pool, then burn |
 | 12 | `seed_pair` | admin | Pair seeding helper |
 | 13–14 | `backfill_metaplex` / `backfill_receipt_t22` | admin | Metadata migration helpers |
 | — | `transfer_hook` | Token-2022 CPI | Same rebalance path on receipt transfer |
@@ -293,20 +307,24 @@ npm start
 Core logic lives in `crates/leverage-math/src/lib.rs`:
 
 ```text
-loser selection:
-  ratio fell  → MINTA lost relative value → mint A
-  ratio rose  → MINTB lost relative value → mint B
+loser selection (oracle-free):
+  A/B ratio fell since last_ratio → MINTA underperformed → mint A
+  A/B ratio rose                  → MINTB underperformed → mint B
 
-mint sizing (simplified):
-  m ≈ reserve × L × |move|
+mint sizing:
+  m ≈ reserve × min(user_leverage, elastic_leverage) × |move|
+  elastic_leverage decays L_max → L_min as supply / (supply + reserve) grows
   clamped by max_mint_bps and circuit breaker
 
 two-pool invariant:
-  amount_pair / pair_reserve == amount_usdc / usdc_reserve
-  (same relative price drop in both venues)
+  amount_pair / pair_reserve ≈ amount_usdc / usdc_reserve
+  (both venues move by the same fraction — no inter-venue arb gap)
+
+LP yield (off-chain, from trading):
+  Raydium fees on triangle swaps → protocol LP positions → receipt NAV
 ```
 
-Run the full test suite:
+Run the full test suite (includes red-team fuzz + drain sim):
 
 ```bash
 cargo test -p leverage-math
@@ -314,21 +332,26 @@ cargo test -p leverage-math
 
 ---
 
-## Known risks
+## Safety model
 
-### What the two-pool design fixes
+### Built-in protections
 
-The naive failure mode — mint only into the A/B pool, leaving a cheaper loser in the pair than in the USDC pool — **is not how this program works**. Each rebalance mints the loser **directly into both vaults** with the invariant `amount_pair / pair_reserve ≈ amount_usdc / usdc_reserve`, so both venues move by the same fraction. External arbers cannot harvest a protocol-created price gap between those two pools.
+| Mechanism | Role |
+|-----------|------|
+| **Two-pool mint** | Eliminates buy-cheap-in-pair / dump-to-USDC exploit from rebalance alone |
+| **Elastic leverage decay** | Throttles mint aggression as loser supply bloats |
+| **`max_mint_bps` + circuit breaker** | Per-crank caps; zero mint on extreme moves |
+| **Crank absorb + move clamps** | Small, frequent steps instead of one-shot dumps |
+| **Hook soft no-op** | Receipt transfers never brick on benign skip |
+| **Raydium fees + arb volume** | LP revenue loop — compensates for dilution when trading is active |
 
-The `leverage-math` red-team drain sim (`drain_sim_protocol_never_touches_the_quote_anchor`) checks 2000 rounds: **rebalance only adds loser tokens; it never removes USDC from the anchor pools**. Quote reserves change only from external trades, not from the crank/hook path.
+### What is not guaranteed
 
-### What remains risky
-
-1. **Loser dilution** — minting the underperformer still pushes its price down in both pools simultaneously. That is the leverage mechanism, not a bug, but sustained one-sided moves inflate loser supply and can erode LP backing per receipt.
-2. **No restoring force** — unlike perp engines, there is no margin call, liquidation, or ADL that forces deleveraging. Elastic leverage decay and per-crank caps bound mint size; they do not guarantee NAV recovery.
-3. **External market risk** — third-party swaps, routing, and macro moves still affect pool reserves and receipt NAV. The protocol does not immunize LPs against bad underlying performance.
+1. **NAV vs dilution** — rebalance dilutes the loser by design. Fees and arb can grow NAV faster than dilution erodes it, but that depends on real trading volume — not proven for every market regime.
+2. **Sustained one-sided trends** — a long run in one direction keeps minting the same loser (at decaying leverage). Elastic decay bounds per-crank size; it does not force a price recovery.
+3. **External market risk** — macro moves, low liquidity, and third-party routing still move pool reserves and receipt backing.
 4. **Hook CU budget** — receipt transfers carry rebalance compute; large account lists require a persistent LUT in Config.
-5. **Unaudited** — no formal verification; harness tests, unit tests, and the red-team sim above only.
+5. **Unaudited** — harness tests, unit tests, and red-team sims only; no formal verification.
 6. **Admin keys** — pair config, pause, and upgrade authority are high-value targets.
 
 ---
