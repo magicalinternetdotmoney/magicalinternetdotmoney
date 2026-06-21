@@ -877,6 +877,7 @@ const server = http.createServer(async (req, res) => {
       upgradeAuthority,
       rpc: RPC_URL.replace(/\?.*/, ""),
       usdcMint: USDC_MINT,
+      memeMint: MEME_MINT,
       pairs: REGISTRY.length,
       pairsWithReceiptSupply: withReceipts,
       maturity: "mainnet-alpha",
@@ -890,6 +891,7 @@ const server = http.createServer(async (req, res) => {
         program: "https://solscan.io/account/" + PROGRAM_ID,
         programData: "https://solscan.io/account/" + programData,
         upgradeAuthority: "https://solscan.io/account/" + upgradeAuthority,
+        memeMint: "https://solscan.io/token/" + MEME_MINT,
         txUrlPrefix: "https://solscan.io/tx/",
       },
       notes: [

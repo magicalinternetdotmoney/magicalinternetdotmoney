@@ -236,6 +236,7 @@
   var X_URL = "https://x.com/_magicalmoney";
   var X_HANDLE = "@_magicalmoney";
   var GITHUB_URL = "https://github.com/magicalinternetdotmoney/magicalinternetdotmoney";
+  var CA_URL = "https://solscan.io/token/" + MEME_MINT_ADDR;
   var FOOT_LINK_STYLE = "color:#7e7e97; text-decoration:none; border-bottom:1px dashed rgba(255,255,255,0.12);";
   var X_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="display:block;"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>';
   function xLink(icon) {
@@ -243,8 +244,11 @@
       ? "display:flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:10px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.03); color:#7e7e97; text-decoration:none; flex:none;"
       : "color:#7e7e97; text-decoration:none; border-bottom:1px dashed rgba(255,255,255,0.12);", icon ? X_ICON : X_HANDLE);
   }
+  function caLink() {
+    return extLink(CA_URL, FOOT_LINK_STYLE, "ca");
+  }
   function siteFoot() {
-    return '<div style="text-align:center; padding:20px 0 4px; font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#54546a;">' + xLink(false) + " · " + extLink(GITHUB_URL, FOOT_LINK_STYLE, "github") + " · unaudited · experimental</div>";
+    return '<div style="text-align:center; padding:20px 0 4px; font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#54546a;">' + xLink(false) + " · " + extLink(GITHUB_URL, FOOT_LINK_STYLE, "github") + " · " + caLink() + " · unaudited · experimental</div>";
   }
   function jupSwapUrl(buyMint) {
     return "https://jup.ag/swap?sell=" + encodeURIComponent(WSOL_MINT) + "&buy=" + encodeURIComponent(buyMint);
@@ -699,7 +703,7 @@
       return '<div style="border-radius:18px; padding:14px 16px; background:rgba(47,230,192,0.05); border:1px solid rgba(47,230,192,0.18);"><div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;"><span style="width:7px; height:7px; border-radius:50%; background:#f2c14e; box-shadow:0 0 8px #f2c14e;"></span><span style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#f2c14e;">mainnet alpha · unaudited</span></div><div style="font-size:12.5px; color:#9494ad; line-height:1.55;">LPs: deposit/withdraw mints receipt — rebalancing needs a receipt <span style="color:#cfcfe0;">transfer</span> (transfer hook). Traders: swap +/− legs on Jupiter.</div>' + jupRow + '</div>';
     }
     var head = btn("togglePlaybook", null, "width:100%; display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border:none; background:none; cursor:pointer;", '<span style="display:flex; align-items:center; gap:8px;"><span style="font-family:\'IBM Plex Mono\',monospace; font-size:11px; color:#cfcfe0; letter-spacing:0.08em;">HOW IT WORKS</span><span style="width:7px; height:7px; border-radius:50%; background:#f2c14e; box-shadow:0 0 8px #f2c14e;"></span><span style="font-family:\'IBM Plex Mono\',monospace; font-size:9.5px; color:#f2c14e;">alpha</span></span><span style="color:#7e7e97; font-size:12px; transform:rotate(' + (S.playbookOpen ? "180deg" : "0deg") + '); display:inline-block;">▾</span>');
-    var foot = '<div style="padding:0 16px 12px; font-size:10.5px; color:#54546a; line-height:1.45; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px;">' + xLink(false) + " · unaudited · experimental</div>";
+    var foot = '<div style="padding:0 16px 12px; font-size:10.5px; color:#54546a; line-height:1.45; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px;">' + xLink(false) + " · " + caLink() + " · unaudited · experimental</div>";
     return '<div style="border-radius:18px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.07); overflow:hidden;">' + head +
       (S.playbookOpen ? '<div style="padding:0 16px 4px;">' + body + "</div>" + foot : "") + "</div>";
   }
@@ -747,7 +751,7 @@
       '<div style="position:relative; width:140px; height:140px; display:flex; align-items:center; justify-content:center; animation:mim-rise .7s ease both;"><svg width="140" height="140" viewBox="0 0 160 160" style="position:absolute; inset:0; animation:mim-spin 26s linear infinite;"><circle cx="80" cy="80" r="70" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1" stroke-dasharray="2 7"/></svg><svg width="96" height="92" viewBox="0 0 96 92" fill="none" style="filter:drop-shadow(0 0 16px rgba(160,107,255,0.45));"><path d="M48 8 L88 80 L8 80 Z" stroke="url(#sg)" stroke-width="2.5" stroke-linejoin="round" fill="rgba(160,107,255,0.05)"/><circle cx="48" cy="8" r="6.5" fill="#2fe6c0"/><circle cx="88" cy="80" r="6.5" fill="#a06bff"/><circle cx="8" cy="80" r="6.5" fill="#f2c14e"/><defs><linearGradient id="sg" x1="0" y1="0" x2="96" y2="92"><stop offset="0" stop-color="#2fe6c0"/><stop offset="1" stop-color="#a06bff"/></linearGradient></defs></svg></div>' +
       '<div style="animation:mim-rise .7s ease .08s both;"><h1 style="margin:0; font-size:clamp(36px,8vw,52px); line-height:1.0; font-weight:700; letter-spacing:-0.025em; color:#f4f4fb;">Magical Internet<br>Money</h1><p style="margin:18px auto 0; max-width:390px; font-size:16px; line-height:1.55; color:#9494ad;">mainnet alpha — launch a pair via <span style="color:#cfcfe0;">~10 wallet txs</span> (Raydium triangle + receipt), or deposit USDC for receipt LPs. <span style="color:#7e7e97; font-size:13px;">Unaudited · verify on-chain.</span></p></div>' +
       '<div style="width:100%; max-width:340px; display:flex; flex-direction:column; gap:12px; animation:mim-rise .7s ease .16s both;">' + btn("openWallet", null, "width:100%; padding:17px; border:none; border-radius:14px; font-size:16px; font-weight:600; color:#07070b; background:linear-gradient(100deg,#2fe6c0,#7ad9ff 35%,#a06bff); background-size:220% auto; box-shadow:0 12px 34px -10px rgba(122,150,255,0.6); cursor:pointer; animation:mim-shimmer 4s linear infinite;", "Connect Wallet") +
-      '<div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#54546a; letter-spacing:0.03em;">' + xLink(false) + " · " + extLink(GITHUB_URL, FOOT_LINK_STYLE, "github") + " · unaudited · experimental · here be dragons</div></div></div></div>";
+      '<div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#54546a; letter-spacing:0.03em;">' + xLink(false) + " · " + extLink(GITHUB_URL, FOOT_LINK_STYLE, "github") + " · " + caLink() + " · unaudited · experimental · here be dragons</div></div></div></div>";
   }
 
   function statCard(label, val, accent) {
