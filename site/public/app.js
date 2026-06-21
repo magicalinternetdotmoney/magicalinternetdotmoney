@@ -215,7 +215,7 @@
   }
   function pairIcon(p, size) {
     size = size || 28;
-    var logo = p && p.underlyingLogo;
+    var logo = p && (p.logo || p.underlyingLogo);
     if (logo) return tokenLogoIcon(logo, size);
     var th = (p && p.theme) || THEMES[0];
     return '<span style="flex:none; display:flex;"><span style="width:' + size + "px; height:" + size + "px; border-radius:50%; background:" + th.a + '; border:2px solid #0c0c16;"></span><span style="width:' + size + "px; height:" + size + "px; border-radius:50%; background:" + th.b + "; border:2px solid #0c0c16; margin-left:-" + Math.round(size * 0.35) + 'px;"></span></span>';

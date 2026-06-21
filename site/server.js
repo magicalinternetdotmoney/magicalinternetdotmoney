@@ -90,10 +90,12 @@ async function enrichPair(chain) {
   ]);
   const labels = labelsFromLegs(rec, ma);
   const underlyingMint = resolveUnderlyingMint({ name: labels.name, sym: labels.sym, underlyingSymbol: labels.underlyingSymbol });
+  const onchain = { receipt: rec, mintA: ma, mintB: mb };
+  const logo = await pairLogo({ name: labels.name, sym: labels.sym, underlyingSymbol: labels.underlyingSymbol, underlyingMint, onchain });
   return Object.assign({}, chain, {
     sym: labels.sym, name: labels.name, theme: { a: "#2fe6c0", b: "#a06bff" },
     underlyingMint, underlyingSymbol: labels.underlyingSymbol, levMax: labels.levMax,
-    onchain: { receipt: rec, mintA: ma, mintB: mb },
+    logo, onchain,
   });
 }
 function parseUnderlyingSymbol(mintAName, mintASymbol) {
@@ -146,21 +148,85 @@ function resolveUnderlyingMint(p) {
   return null;
 }
 const UNDERLYING_CACHE = new Map();
+async function jupiterTokenByMint(mint) {
+  try {
+    const tok = await httpsGetJson("lite-api.jup.ag", "/tokens/v1/token/" + mint);
+    if (tok && tok.logoURI) return { mint, symbol: tok.symbol || null, name: tok.name || null, logo: tok.logoURI };
+  } catch (e) { /* fall through */ }
+  return null;
+}
+async function jupiterSearchSymbol(sym) {
+  if (!sym) return null;
+  try {
+    const hits = await httpsGetJson("lite-api.jup.ag", "/tokens/v1/search?query=" + encodeURIComponent(sym));
+    const want = sym.toUpperCase();
+    const tok = (Array.isArray(hits) ? hits : []).find((t) => t && t.symbol && t.symbol.toUpperCase() === want)
+      || (Array.isArray(hits) ? hits[0] : null);
+    if (tok && tok.logoURI) return { mint: tok.id || null, symbol: tok.symbol || null, name: tok.name || null, logo: tok.logoURI };
+  } catch (e) { /* fall through */ }
+  return null;
+}
+async function dexscreenerLogoBySymbol(sym) {
+  if (!sym) return null;
+  try {
+    const data = await httpsGetJson("api.dexscreener.com", "/latest/dex/search?q=" + encodeURIComponent(sym));
+    const want = sym.toUpperCase().replace(/X$/, ""); // SPCXx → SPCX
+    const pairs = (data.pairs || []).filter((p) => p && p.chainId === "solana");
+    for (const p of pairs) {
+      for (const tok of [p.baseToken, p.quoteToken]) {
+        if (!tok || !tok.address) continue;
+        const ts = (tok.symbol || "").toUpperCase();
+        if (ts === sym.toUpperCase() || ts === want || ts + "X" === sym.toUpperCase()) {
+          return "https://cdn.dexscreener.com/tokens/solana/" + tok.address + ".png";
+        }
+      }
+    }
+  } catch (e) { /* no dexscreener hit */ }
+  return null;
+}
 async function underlyingInfo(mint) {
   if (!mint) return null;
   if (mint === USDC_MINT) return { mint, symbol: "USDC", name: "USD Coin", logo: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png" };
   if (UNDERLYING_CACHE.has(mint)) return UNDERLYING_CACHE.get(mint);
+  let out = null;
   try {
     const info = await httpsGetJson("api-v3.raydium.io", "/mint/ids?mints=" + mint);
     const tok = (info.data || [])[0];
-    const out = tok ? { mint, symbol: tok.symbol, name: tok.name, logo: tok.logoURI || null } : { mint, symbol: null, name: null, logo: null };
-    UNDERLYING_CACHE.set(mint, out);
-    return out;
-  } catch (e) {
-    const out = { mint, symbol: null, name: null, logo: null };
-    UNDERLYING_CACHE.set(mint, out);
-    return out;
+    if (tok) out = { mint, symbol: tok.symbol, name: tok.name, logo: tok.logoURI || null };
+  } catch (e) { /* try jupiter */ }
+  if (!out || !out.logo) {
+    const j = await jupiterTokenByMint(mint);
+    if (j) out = Object.assign({ mint, symbol: null, name: null, logo: null }, out, j);
   }
+  if (!out) out = { mint, symbol: null, name: null, logo: null };
+  UNDERLYING_CACHE.set(mint, out);
+  return out;
+}
+// Receipt / pair list icon — same source wallets see via /api/meta `image`.
+async function pairLogo(p) {
+  const um = resolveUnderlyingMint(p);
+  if (um) {
+    const ui = await underlyingInfo(um);
+    if (ui && ui.logo) return ui.logo;
+  }
+  const us = p.underlyingSymbol
+    || parseUnderlyingSymbol(p.onchain && p.onchain.mintA && p.onchain.mintA.name, p.onchain && p.onchain.mintA && p.onchain.mintA.symbol)
+    || (p.sym || "").replace(/^\d+x/i, "");
+  if (us) {
+    const j = await jupiterSearchSymbol(us);
+    if (j && j.logo) return j.logo;
+    const dx = await dexscreenerLogoBySymbol(us);
+    if (dx) return dx;
+  }
+  const rec = p.onchain && p.onchain.receipt;
+  if (rec && rec.uri && rec.uri.startsWith("http") && !rec.uri.includes("/api/meta")) {
+    try {
+      const u = new URL(rec.uri);
+      const meta = await httpsGetJson(u.hostname, u.pathname + u.search);
+      if (meta && meta.image) return meta.image;
+    } catch (e) { /* no off-chain image */ }
+  }
+  return null;
 }
 let REGISTRY = [];
 let GPA_BUSY = false, GPA_AT = 0;
@@ -453,7 +519,8 @@ async function pairsPayload(opts) {
       apr: ap ? ap.total : null, nav: last ? last.nav : null,
       receiptMint: p.receiptMint, mintA: p.mintA, mintB: p.mintB,
       underlyingMint: um, underlyingSymbol: (ui && ui.symbol) || p.underlyingSymbol || null,
-      underlyingLogo: (ui && ui.logo) || null,
+      logo: p.logo || (ui && ui.logo) || null,
+      underlyingLogo: p.logo || (ui && ui.logo) || null,
     });
   }
   const q = (opts && opts.q) || "", sort = (opts && opts.sort) || "tvl", order = (opts && opts.order) || "desc";
@@ -520,22 +587,23 @@ async function metaPayload(p, side, mintOnly) {
     const role = pair ? synthLegRole(pair, mintOnly) : null;
     const us = parseUnderlyingSymbol(m.name, m.symbol);
     const um = resolveUnderlyingMint({ sym: m.symbol, name: m.name, underlyingSymbol: us });
-    const ui = um ? await underlyingInfo(um) : null;
     const symLeg = m.symbol && (m.symbol.startsWith("-") || m.symbol.startsWith("−")) ? "inverse" : "long";
     const leg = role ? role.leg : symLeg;
+    const image = (await pairLogo({
+      sym: m.symbol, name: m.name, underlyingSymbol: us, underlyingMint: um,
+      onchain: pair ? pair.onchain : { mintA: m },
+    })) || undefined;
     const out = {
       name: m.name, symbol: m.symbol,
       description: (m.symbol && /^[+-−]\d+x/i.test(m.symbol) ? m.symbol + " synthetic · " + leg + " leg" : m.uri) || "",
-      image: ui && ui.logo ? ui.logo : undefined, mint: mintOnly, leg,
+      image, mint: mintOnly, leg,
     };
     if (role) Object.assign(out, { side: role.side, configRole: role.configRole, pair: pair.sym, receiptMint: pair.receiptMint });
     else if (pair && pair.receiptMint === mintOnly) out.leg = "receipt";
     return out;
   }
   if (!p) return null;
-  const um = resolveUnderlyingMint(p);
-  const ui = um ? await underlyingInfo(um) : null;
-  const image = ui && ui.logo ? ui.logo : undefined;
+  const image = (await pairLogo(p)) || undefined;
   const oc = p.onchain || {};
   const canon = txbuild.canonicalPairMeta(p, process.env.SITE_ORIGIN || "https://magicalinternet.money");
   if (side === "A" || side === "B") {
