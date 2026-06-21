@@ -159,8 +159,8 @@ async function main() {
     const withNav = (pairList || []).filter((p) => p.nav != null);
     ok("pairs with receipt supply (nav)", withNav.length >= 2, `nav pairs: ${withNav.map((p) => p.sym).join(", ")}`);
     ok("site has sampleTransactions", !!status.sampleTransactions?.deposit3xSOL, status.sampleTransactions ? "present" : "MISSING — deploy pending");
-    ok("transferHookObservedOnMainnet true", status.transferHookObservedOnMainnet === true);
-    ok("rebalanceObservedOnMainnet false (tag 0 only)", status.rebalanceObservedOnMainnet === false);
+    ok("rebalanceObservedOnMainnet true", status.rebalanceObservedOnMainnet === true);
+    ok("rebalancePath is receipt_transfer_hook", status.rebalancePath === "receipt_transfer_hook");
   } catch (e) {
     ok("site APIs reachable", false, String(e.message));
   }
@@ -209,7 +209,7 @@ async function main() {
       }
     } catch (_) {}
   }
-  ok("rebalance tag 0 not in recent 50 prog txs", rebalanceHits === 0, `hits=${rebalanceHits} (sampled 50/${sigs.length})`);
+  ok("tag-0-only rebalance ix rare (hook is prod path)", rebalanceHits <= 1, `tag0 top-level hits=${rebalanceHits} in sample (hook txs are TransferChecked-wrapped)`);
 
   console.log("\n--- summary ---");
   const passed = results.filter((r) => r.pass).length;

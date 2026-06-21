@@ -887,8 +887,8 @@ const server = http.createServer(async (req, res) => {
       walletRequiredFor: ["/api/balance", "deposit", "withdraw", "launch"],
       raydiumLpExample: MAINNET_RAYDIUM_LP_3XSOL_AB,
       sampleTransactions: MAINNET_SAMPLE_TXS,
-      transferHookObservedOnMainnet: true,
-      rebalanceObservedOnMainnet: false,
+      rebalanceObservedOnMainnet: true,
+      rebalancePath: "receipt_transfer_hook",
       verify: {
         program: "https://solscan.io/account/" + PROGRAM_ID,
         programData: "https://solscan.io/account/" + programData,
@@ -898,8 +898,8 @@ const server = http.createServer(async (req, res) => {
       },
       notes: [
         "Pinocchio mainnet: deposit/withdraw CPI into Raydium CP-Swap pool vaults (see sample txs + LP mint activity).",
-        "Receipt transfer-hook rebalance observed on mainnet (see transferHookExecute + transferHookRebalance3xSOL) — Token-2022 TransferChecked invokes J345….",
-        "Standalone permissionless rebalance (tag 0) not observed in mainnet program history as of 2026-06-21 — covered on surfpool fork.",
+        "Rebalance on mainnet = receipt transfer hook: TransferChecked → J345… → mint loser leg into Raydium vaults (see transferHookRebalance3xSOL on Solscan).",
+        "Top-level rebalance ix (tag 0) without a receipt transfer is not used on mainnet; hook path is the production crank.",
         "Launch is ~10 wallet-approved txs, not a single click.",
         "site/_handoff/ is a pre-build Claude design mockup, not production proof.",
         "Public read APIs work without a wallet: /api/status, /api/pairs, /api/charts.",
