@@ -11,9 +11,23 @@
  */
 
 import { PublicKey, TransactionInstruction, AddressLookupTableAccount, type Connection } from "@solana/web3.js";
+import { rateGate } from "./limit";
 
 export const JUP_LITE_BASE = "https://lite-api.jup.ag/swap/v1";
 export const JUP_PRO_BASE = "https://api.jup.ag/swap/v1";
+
+// Global QPS gate for ALL Jupiter calls (quote + swap-instructions). Parallel
+// market scans funnel through this single lane so we never exceed the plan's
+// rate limit. Default ≈ 1 req/s (Lite-safe); `setJupiterRatePerSec` widens it
+// for a keyed Ultra plan.
+let jupiterGate = rateGate(1100);
+export function setJupiterRatePerSec(perSec: number): void {
+  jupiterGate = rateGate(perSec > 0 ? Math.ceil(1000 / perSec) : 0);
+}
+/** await the shared Jupiter rate lane before issuing a request. */
+export function jupiterThrottle(): Promise<void> {
+  return jupiterGate();
+}
 
 export interface JupiterOpts {
   /** dev.jup.ag key → uses the Ultra (keyed) host. omit for free Lite. */
@@ -47,6 +61,7 @@ export async function jupiterQuote(
     `${base}/quote?inputMint=${asMint(inputMint)}&outputMint=${asMint(outputMint)}` +
     `&amount=${amount.toString()}&slippageBps=${opts.slippageBps ?? 50}&restrictIntermediateTokens=true`;
   const headers: Record<string, string> = opts.apiKey ? { "x-api-key": opts.apiKey } : {};
+  await jupiterThrottle();
   const res = await fetch(url, { headers });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -111,6 +126,7 @@ export async function jupiterSwapInstructions(
   const base = opts.baseUrl || (opts.apiKey ? JUP_PRO_BASE : JUP_LITE_BASE);
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (opts.apiKey) headers["x-api-key"] = opts.apiKey;
+  await jupiterThrottle();
   const res = await fetch(`${base}/swap-instructions`, {
     method: "POST",
     headers,

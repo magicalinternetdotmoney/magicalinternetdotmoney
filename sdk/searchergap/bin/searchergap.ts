@@ -43,13 +43,13 @@ function fmtUsdc(atoms: bigint): string {
 function usage() {
   console.log(`usage:
   searchergap scan  [--rpc <url>] [--json]
-  searchergap run   [--rpc <url>] [--live] [--keypair <path>] [--min-profit <usdc-atoms>] [--poll <ms>] [--tip <lamports>] [--jup] [--jup-key <key>]
+  searchergap run   [--rpc <url>] [--keypair <path>] [--min-profit <usdc-atoms>] [--poll <ms>] [--tip <lamports>] [--jup-key <key>] [--jup-rate <req/s>] [--concurrency <n>] [--dry-run] [--no-jup] [--plain]
 
-  run is DRY-RUN by default (scan + build + simulate, never sends).
-  --live signs with --keypair (or $KEYPAIR) and sends. You run that; the SDK only signs when you ask.
-  --jup  also hunts the cross-venue surface via Jupiter (Lite/free by default).
-         get a free key at https://dev.jup.ag and pass --jup-key for higher limits.
-  rpc + keypair fall back to your solana config (~/.config/solana/cli/config.yml).
+  run cycles ALL gaps (triangle + cross-venue vs Jupiter) and is LIVE by default
+  — it signs with your keypair and sends. --dry-run simulates only. --no-jup
+  drops the Jupiter feed. rpc + keypair fall back to your solana config
+  (~/.config/solana/cli/config.yml). Jupiter Ultra key: --jup-key or $JUPITER_API_KEY
+  (free at https://dev.jup.ag).
   env: RPC_URL, KEYPAIR, MIN_PROFIT_USDC_ATOMS, POLL_MS, JUPITER_API_KEY`);
 }
 
@@ -66,24 +66,44 @@ async function main() {
   const rpc = arg("rpc") || process.env.RPC_URL || cfg.rpc || "https://api.mainnet-beta.solana.com";
 
   if (cmd === "run") {
-    const live = process.argv.includes("--live");
     const connection = new Connection(rpc, "confirmed");
-    const jup = process.argv.includes("--jup");
+    const noJup = process.argv.includes("--no-jup");
     const jupKey = arg("jup-key") || process.env.JUPITER_API_KEY;
-    if (jup) {
-      console.log(
-        jupKey
-          ? "cross-venue: Jupiter Ultra (keyed)"
-          : "cross-venue: Jupiter Lite (free, rate-limited) — grab a free key at https://dev.jup.ag and pass --jup-key for higher limits",
-      );
+
+    // LIVE by default; fall back to dry-run if --dry-run or no keeper is available.
+    let live = !process.argv.includes("--dry-run");
+    let keeper: Keypair | null = null;
+    if (live) {
+      try { keeper = loadKeeper(cfg.keypair); }
+      catch (e) { console.log(`no keypair (${(e as Error).message}) → DRY-RUN`); live = false; }
     }
+    const plain = process.argv.includes("--plain");
+    const useDash = !plain && process.stdout.isTTY;
+
+    if (!useDash) {
+      if (live) console.log(`⚠ LIVE — signing + sending as ${keeper!.publicKey.toBase58()}  (use --dry-run to simulate only)`);
+      if (!noJup) {
+        console.log(
+          jupKey
+            ? "cross-venue: Jupiter Ultra (keyed)"
+            : "cross-venue: Jupiter Lite (free, rate-limited) — free key at https://dev.jup.ag → pass --jup-key or set $JUPITER_API_KEY (use --no-jup to disable)",
+        );
+      }
+    }
+
     runLoop(connection, {
       live,
-      keeper: live ? loadKeeper(cfg.keypair) : null,
+      keeper,
+      dashboard: useDash,
       minProfitUsdcAtoms: BigInt(arg("min-profit") || process.env.MIN_PROFIT_USDC_ATOMS || "50000"),
       pollMs: Number(arg("poll") || process.env.POLL_MS || 4000),
       tipLamports: Number(arg("tip") || 10000),
-      jupiter: jup ? { enabled: true, apiKey: jupKey } : undefined,
+      concurrency: Number(arg("concurrency") || process.env.SCAN_CONCURRENCY || 4),
+      jupiter: noJup ? undefined : {
+        enabled: true,
+        apiKey: jupKey,
+        ratePerSec: arg("jup-rate") ? Number(arg("jup-rate")) : undefined,
+      },
     });
     return; // runLoop keeps the process alive via setInterval
   }
