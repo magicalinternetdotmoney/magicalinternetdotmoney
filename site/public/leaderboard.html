@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Leaderboards · Magical Internet Money</title>
+<meta name="description" content="Per-market long / short / LP leaderboards: average entry and realized + unrealized P&L, indexed from on-chain Raydium CP-Swap fills." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#07070b; --panel:#0c0c16; --panel2:#10101c; --line:rgba(160,107,255,.14);
+    --fg:#f4f4fb; --dim:#9494ad; --faint:#54546a;
+    --mint:#2fe6c0; --violet:#a06bff; --green:#14f195; --red:#ff5470; --amber:#f2c14e;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--fg);font-family:'Space Grotesk',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  .mono{font-family:'IBM Plex Mono',monospace}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 18px 80px}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none}
+  .brand b{font-weight:700;letter-spacing:-.02em}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:linear-gradient(135deg,var(--mint),var(--violet))}
+  .navlinks{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .navbtn{font-size:12px;font-weight:600;text-decoration:none;border:1px solid var(--line);padding:8px 14px;border-radius:999px;color:var(--dim);transition:.12s}
+  .navbtn:hover{color:var(--fg);border-color:var(--violet)}
+  .navbtn.on{color:#f2c14e;border-color:rgba(242,193,78,.45);background:linear-gradient(100deg,rgba(242,193,78,.14),rgba(160,107,255,.1));box-shadow:0 0 18px -6px rgba(242,193,78,.4)}
+  h1{margin:0 0 4px;font-size:30px;letter-spacing:-.04em}
+  .sub{color:var(--dim);font-size:13px;margin-bottom:18px;max-width:680px;line-height:1.5}
+  .label{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);margin:0 0 8px}
+  /* market toolbar */
+  .mkthead{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .mktsearch{flex:1;min-width:180px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 12px;color:var(--fg);font-size:12px;font-family:'IBM Plex Mono',monospace}
+  .mktsearch:focus{outline:none;border-color:var(--violet)}
+  .mktsort,.mktorder{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 10px;color:var(--dim);font-size:12px;cursor:pointer}
+  .mktsort:focus,.mktorder:hover{outline:none;border-color:var(--violet);color:var(--fg)}
+  .mktorder{width:34px;font-weight:700}
+  /* market chips */
+  .markets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .mktcount{font-size:10px;color:var(--faint);align-self:center}
+  /* selected market full name */
+  .mktname{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:16px;min-height:22px}
+  .mktname .nm{font-size:18px;font-weight:700;letter-spacing:-.02em;color:var(--fg)}
+  .mktname .sy{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--mint);border:1px solid rgba(47,230,192,.35);border-radius:6px;padding:2px 7px}
+  .mktname a.cfg{font-size:11px;color:var(--faint);text-decoration:none}
+  .mktname a.cfg:hover{color:var(--violet)}
+  .juprow{display:flex;gap:8px;flex-wrap:wrap;margin:-8px 0 14px}
+  .jupbtn{flex:0 1 auto;min-width:120px;display:inline-flex;align-items:center;justify-content:center;padding:9px 14px;border-radius:10px;font-size:12px;font-weight:600;text-decoration:none;transition:.12s}
+  .jupbtn.long{color:var(--green);border:1px solid rgba(20,241,149,.28);background:rgba(20,241,149,.07)}
+  .jupbtn.long:hover{border-color:var(--green);background:rgba(20,241,149,.14)}
+  .jupbtn.short{color:#cdbcff;border:1px solid rgba(160,107,255,.28);background:rgba(160,107,255,.07)}
+  .jupbtn.short:hover{border-color:var(--violet);background:rgba(160,107,255,.14)}
+  .chip{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 12px;cursor:pointer;transition:.12s;color:var(--fg)}
+  .chip:hover{border-color:var(--violet)}
+  .chip.on{border-color:var(--mint);background:linear-gradient(180deg,rgba(47,230,192,.08),transparent)}
+  .chip img{width:20px;height:20px;border-radius:50%;background:#222}
+  .chip .s{font-weight:600;font-size:13px}
+  .chip .n{font-size:10px;color:var(--dim)}
+  /* leg tabs */
+  .legrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+  .legs{display:flex;gap:6px}
+  .legright{display:flex;align-items:center;gap:14px}
+  .dust{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);cursor:pointer;user-select:none}
+  .dust input{accent-color:var(--violet)}
+  .live{display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--green);font-weight:600}
+  .live .d{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:livepulse 1.8s ease-in-out infinite}
+  .live.stale{color:var(--faint)} .live.stale .d{background:var(--faint);box-shadow:none;animation:none}
+  @keyframes livepulse{0%,100%{opacity:.35}50%{opacity:1}}
+  .leg{flex:0 0 auto;padding:9px 18px;border-radius:10px;border:1px solid var(--line);background:var(--panel);cursor:pointer;font-weight:600;font-size:13px;color:var(--dim);transition:.12s}
+  .leg:hover{color:var(--fg)}
+  .leg.on.ls{color:#07070b;background:linear-gradient(100deg,var(--green),var(--red));border-color:var(--amber)}
+  .leg.on.long{color:#07070b;background:var(--green);border-color:var(--green)}
+  .leg.on.short{color:#07070b;background:var(--red);border-color:var(--red)}
+  .leg.on.lp{color:#07070b;background:var(--violet);border-color:var(--violet)}
+  .badge.legs{color:var(--mint);border-color:rgba(47,230,192,.35);letter-spacing:.05em}
+  .badge.pool{color:var(--violet);border-color:rgba(160,107,255,.4)}
+  /* totals */
+  .totals{display:flex;flex-wrap:wrap;gap:18px;padding:13px 16px;background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;font-size:12px}
+  .totals .k{color:var(--faint);text-transform:uppercase;letter-spacing:.12em;font-size:9px;display:block;margin-bottom:3px}
+  .totals .v{font-weight:600}
+  .pos{color:var(--green)} .neg{color:var(--red)} .muted{color:var(--dim)}
+  /* table */
+  .tablewrap{border:1px solid var(--line);border-radius:13px;overflow:hidden;background:var(--panel)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);text-align:right;padding:11px 12px;font-weight:600;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap}
+  thead th:first-child,thead th.l{text-align:left}
+  thead th:hover{color:var(--dim)}
+  thead th.act{color:var(--mint)}
+  tbody td{padding:11px 12px;text-align:right;border-bottom:1px solid rgba(160,107,255,.06);white-space:nowrap}
+  tbody td:first-child,tbody td.l{text-align:left}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:rgba(160,107,255,.04)}
+  .rank{color:var(--faint);font-weight:600;width:34px}
+  .w{color:var(--fg);text-decoration:none}
+  .w:hover{color:var(--mint)}
+  .badge{font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;padding:2px 6px;border-radius:5px;margin-left:6px;border:1px solid var(--line);color:var(--dim)}
+  .badge.approx{color:var(--amber);border-color:rgba(242,193,78,.4)}
+  .badge.free{color:var(--mint);border-color:rgba(47,230,192,.4)}
+  .empty,.err{padding:34px;text-align:center;color:var(--dim);font-size:13px}
+  .err{color:var(--red)}
+  .foot{margin-top:18px;color:var(--faint);font-size:11px;line-height:1.6}
+  .foot code{color:var(--dim)}
+  @media(max-width:760px){ .hide-sm{display:none} h1{font-size:24px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="brand" href="/"><span class="dot"></span><b>Magical Internet Money</b></a>
+    <div class="navlinks">
+      <a class="navbtn" href="https://trade.magicalinternet.money">Trade</a>
+      <a class="navbtn on" href="/leaderboard">Leaderboard</a>
+      <a class="navbtn" href="/">App</a>
+    </div>
+  </div>
+  <h1>Market leaderboards</h1>
+  <div class="sub">Average entry and realized + unrealized P&amp;L per wallet, for every leg of every leverage market — indexed from on-chain Raydium CP-Swap fills. <b style="color:var(--green)">Long</b> = the +leg, <b style="color:var(--red)">Short</b> = the −leg, <b style="color:var(--violet)">LP</b> = pool liquidity. Cost basis is in USDC.</div>
+
+  <div class="mkthead">
+    <p class="label" style="margin:0">Market</p>
+    <input id="mktsearch" class="mktsearch" type="text" placeholder="search sym / name / mint…" autocomplete="off" />
+    <select id="mktsort" class="mktsort" title="sort markets">
+      <option value="pnl" selected>Net P&amp;L</option>
+      <option value="positions">Most positions</option>
+      <option value="tvl">Open value</option>
+      <option value="holders">Holders</option>
+      <option value="recent">Recent activity</option>
+      <option value="sym">Symbol A–Z</option>
+    </select>
+    <button id="mktorder" class="mktorder" title="toggle order">↓</button>
+  </div>
+  <div class="markets" id="markets"><span class="muted" style="font-size:12px">loading markets…</span></div>
+  <div class="mktname" id="mktname"></div>
+  <div class="juprow" id="juprow"></div>
+
+  <div class="legrow">
+    <div class="legs" id="legs">
+      <div class="leg ls on" data-leg="ls">Long + Short</div>
+      <div class="leg long" data-leg="long">Long</div>
+      <div class="leg short" data-leg="short">Short</div>
+      <div class="leg lp" data-leg="lp">LP</div>
+    </div>
+    <div class="legright">
+      <span class="live" id="livedot" title="auto-refreshing"><span class="d"></span>live</span>
+      <label class="dust"><input type="checkbox" id="showdust" /> show 0-P&amp;L</label>
+    </div>
+  </div>
+
+  <div class="totals" id="totals" style="display:none"></div>
+  <div class="tablewrap"><div id="table"><div class="empty">select a market</div></div></div>
+
+  <div class="foot">
+    P&amp;L = realized (from closed fills, avg-cost) + unrealized (current balance × live pool price − cost basis), in USDC.
+    <span class="badge approx">approx</span> marks LP rows (impermanent loss not separated) and fills routed without a direct USDC leg.
+    <span class="badge free">no basis</span> marks balances received by transfer with no on-chain buy — current value shown as pure gain.
+    Wallets are linked to Solscan. Indexed from the three CP-Swap pools per market; protocol/authority wallets are excluded.
+  </div>
+</div>
+
+<script>
+const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+const jupBuyUrl = (buyMint) => 'https://jup.ag/swap?sell=' + encodeURIComponent(WSOL_MINT) + '&buy=' + encodeURIComponent(buyMint);
+const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+
+const fmt = (n, d=2) => n==null||!isFinite(n) ? '—' : Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:d>2?0:d});
+const fmtUsd = (n) => n==null||!isFinite(n) ? '—' : (n<0?'-':'')+'$'+fmt(Math.abs(n), Math.abs(n)<1?4:2);
+const short = (pk) => pk ? pk.slice(0,4)+'…'+pk.slice(-4) : '';
+const pct = (r) => r==null?'—':(r>=0?'+':'')+fmt(r*100,1)+'%';
+const cls = (n) => n>0?'pos':n<0?'neg':'muted';
+
+let MARKETS=[], curMarket=null, curLeg='ls', curSort='pnl';
+let mktQuery='', mktSort='pnl', mktOrder='desc', mktTimer=null;
+const legSymCache = {};
+
+const STAT={positions:m=>`${m.positions} pos`, tvl:m=>fmtUsd(m.openValue), pnl:m=>`pnl ${fmtUsd(m.netPnl)}`,
+  holders:m=>`${m.holders} held`, recent:m=>'', sym:m=>`${m.positions} pos`};
+
+async function loadMarkets(keepSel){
+  const params=new URLSearchParams({sort:mktSort, order:mktOrder, limit:'200'});
+  if(mktQuery) params.set('q', mktQuery);
+  const r = await fetch('/api/leaderboard/markets?'+params); const j = await r.json();
+  MARKETS = j.markets||[];
+  const el = document.getElementById('markets');
+  if(!MARKETS.length){ el.innerHTML='<span class="muted" style="font-size:12px">no markets match</span>'; return; }
+  // preserve current selection if still present, else pick first
+  let sel = keepSel && curMarket ? MARKETS.find(m=>m.config===curMarket.config) : null;
+  if(!sel) sel = MARKETS[0];
+  curMarket = sel;
+  el.innerHTML='';
+  MARKETS.forEach((m)=>{
+    const statf = STAT[mktSort]||STAT.positions;
+    const c=document.createElement('div'); c.className='chip'+(m.config===curMarket.config?' on':'');
+    c.innerHTML=(m.logo?`<img src="${m.logo}" onerror="this.style.display='none'">`:'')+
+      `<span><span class="s">${m.sym||short(m.config)}</span> <span class="n">${statf(m)}</span></span>`;
+    c.onclick=()=>{ curMarket=m; document.querySelectorAll('.chip').forEach(x=>x.classList.remove('on')); c.classList.add('on'); load(); };
+    el.appendChild(c);
+  });
+  const cnt=document.createElement('span'); cnt.className='mktcount';
+  cnt.textContent = (j.total!=null? j.total : MARKETS.length)+' markets';
+  el.appendChild(cnt);
+  load();
+}
+
+document.getElementById('mktsearch').addEventListener('input', (e)=>{
+  mktQuery=e.target.value.trim();
+  clearTimeout(mktTimer); mktTimer=setTimeout(()=>loadMarkets(true), 220);
+});
+document.getElementById('mktsort').addEventListener('change',(e)=>{ mktSort=e.target.value; loadMarkets(true); });
+document.getElementById('mktorder').addEventListener('click',(e)=>{
+  mktOrder = mktOrder==='desc'?'asc':'desc'; e.target.textContent = mktOrder==='desc'?'↓':'↑'; loadMarkets(true);
+});
+
+function setLeg(leg){
+  curLeg=leg;
+  document.querySelectorAll('.leg').forEach(x=>x.classList.toggle('on', x.dataset.leg===leg));
+  load();
+}
+document.querySelectorAll('.leg').forEach(x=>x.onclick=()=>setLeg(x.dataset.leg));
+
+// Columns are leg-aware. Avg entry is only meaningful for the single-token
+// long/short legs — for LP (pool-share token) and the combined long+short view
+// it isn't a comparable per-unit price, so we show cost basis there instead.
+const shortPk = (pk)=> pk? pk.slice(0,4)+'…'+pk.slice(-4):'';
+const TAIL=[
+  {k:'value',    t:'Cur. value', f:r=>fmtUsd(r.curValue), sm:1},
+  {k:'realized', t:'Realized',   f:r=>`<span class="${cls(r.realizedPnl)}">${fmtUsd(r.realizedPnl)}</span>`, sm:1},
+  {k:'pnl',      t:'P&L',        f:r=>`<span class="${cls(r.pnl)}">${fmtUsd(r.pnl)}</span>`},
+  {k:'roi',      t:'ROI',        f:r=>`<span class="${cls(r.roi)}">${pct(r.roi)}</span>`},
+];
+function colsFor(leg){
+  if(leg==='long'||leg==='short') return [
+    {k:'balance',  t:'Balance',   f:r=>fmt(r.balance, r.balance<1?4:2)},
+    {k:'avg_entry',t:'Avg entry', f:r=>r.avgEntry==null?'—':fmtUsd(r.avgEntry)},
+    ...TAIL];
+  if(leg==='lp') return [
+    {k:'pool',  t:'Pool', f:r=>`<span class="badge pool mono">${shortPk(r.pool)}</span>`},
+    {k:'value', t:'Cost basis', f:r=>fmtUsd(r.costBasis)},
+    ...TAIL];
+  // ls (combined long+short)
+  return [
+    {k:'legs',  t:'Sides',      f:r=>`<span class="badge legs">${r.legs||''}</span>`},
+    {k:'value', t:'Cost basis', f:r=>fmtUsd(r.costBasis)},
+    ...TAIL];
+}
+
+function renderJupRow(legs){
+  const el=document.getElementById('juprow'); if(!el) return;
+  const m=curMarket;
+  if(!m||!m.mintA||!m.mintB){ el.innerHTML=''; return; }
+  const plusSym=legs?.plusSym||'Long';
+  const minusSym=legs?.minusSym||'Short';
+  el.innerHTML =
+    `<a class="jupbtn long" href="${jupBuyUrl(m.mintA)}" target="_blank" rel="noopener">${esc(plusSym)} on Jupiter ↗</a>`+
+    `<a class="jupbtn short" href="${jupBuyUrl(m.mintB)}" target="_blank" rel="noopener">${esc(minusSym)} on Jupiter ↗</a>`;
+}
+
+async function loadLegSyms(m){
+  if(!m?.receiptMint) return null;
+  if(legSymCache[m.receiptMint]) return legSymCache[m.receiptMint];
+  try{
+    const r=await fetch('/api/contracts?receipt='+encodeURIComponent(m.receiptMint));
+    const j=await r.json();
+    const rows=j.contracts||[];
+    const plus=rows.find(c=>c.leg==='long');
+    const minus=rows.find(c=>c.leg==='inverse');
+    legSymCache[m.receiptMint]={ plusSym: plus?.symbol||'Long', minusSym: minus?.symbol||'Short' };
+    return legSymCache[m.receiptMint];
+  }catch{ return null; }
+}
+
+function renderMktName(){
+  const el=document.getElementById('mktname'); if(!el) return;
+  const m=curMarket; if(!m){ el.innerHTML=''; renderJupRow(null); return; }
+  el.innerHTML =
+    `<span class="nm">${esc(m.name||m.sym||short(m.config))}</span>`+
+    (m.sym?`<span class="sy">${esc(m.sym)}</span>`:'')+
+    `<a class="cfg mono" href="https://solscan.io/account/${m.config}" target="_blank" rel="noopener" title="market config on Solscan">${short(m.config)} ↗</a>`;
+  const cached=legSymCache[m.receiptMint];
+  renderJupRow(cached);
+  if(!cached && m.receiptMint){
+    loadLegSyms(m).then(legs=>{ if(curMarket&&curMarket.receiptMint===m.receiptMint) renderJupRow(legs); });
+  }
+}
+
+function setLive(state){ // 'live' | 'stale'
+  const el=document.getElementById('livedot'); if(!el) return;
+  el.classList.toggle('stale', state==='stale');
+}
+
+async function load(quiet){
+  if(!curMarket) return;
+  renderMktName();
+  const tbl=document.getElementById('table'), tot=document.getElementById('totals');
+  if(!quiet){ tbl.innerHTML='<div class="empty">loading…</div>'; tot.style.display='none'; }
+  let j;
+  try{
+    const dust=document.getElementById('showdust').checked?'&dust=show':'';
+    const r=await fetch(`/api/leaderboard?market=${curMarket.config}&leg=${curLeg}&sort=${curSort}&limit=150${dust}`);
+    j=await r.json();
+    if(j.error) throw new Error(j.error);
+    setLive('live');
+  }catch(e){ if(quiet){ setLive('stale'); return; } tbl.innerHTML=`<div class="err">could not load: ${e.message}</div>`; return; }
+
+  const T=j.totals||{};
+  tot.style.display='flex';
+  tot.innerHTML=[
+    ['Traders', T.traders],
+    ['Holders', T.holders],
+    ['Open value', fmtUsd(T.openValue)],
+    ['Cost basis', fmtUsd(T.costBasis)],
+    ['Realized', `<span class="${cls(T.realized)}">${fmtUsd(T.realized)}</span>`],
+    ['Unrealized', `<span class="${cls(T.unrealized)}">${fmtUsd(T.unrealized)}</span>`],
+    ['Net P&L', `<span class="${cls(T.pnl)}">${fmtUsd(T.pnl)}</span>`],
+    ['Win / lose', `<span class="pos">${T.winners}</span> / <span class="neg">${T.losers}</span>`],
+    j.currentPrice!=null?['Price', fmtUsd(j.currentPrice)]:null,
+  ].filter(Boolean).map(([k,v])=>`<div><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+
+  const rows=j.rows||[];
+  if(!rows.length){ tbl.innerHTML='<div class="empty">no positions in this leg yet</div>'; return; }
+  const COLS=colsFor(curLeg);
+  const th=`<tr><th class="l">#</th><th class="l">Wallet</th>`+
+    COLS.map(c=>`<th class="${(c.sm?'hide-sm ':'')}${curSort===c.k?'act':''}" data-k="${c.k}">${c.t}</th>`).join('')+`</tr>`;
+  const body=rows.map(r=>{
+    return `<tr>
+      <td class="rank">${r.rank}</td>
+      <td class="l"><a class="w mono" href="https://solscan.io/account/${r.wallet}" target="_blank" rel="noopener">${short(r.wallet)}</a>${r.approx?'<span class="badge approx">approx</span>':''}${r.noBasis?'<span class="badge free">no basis</span>':''}</td>`+
+      COLS.map(c=>`<td class="mono ${c.sm?'hide-sm':''}">${c.f(r)}</td>`).join('')+`</tr>`;
+  }).join('');
+  tbl.innerHTML=`<table><thead>${th}</thead><tbody>${body}</tbody></table>`;
+  tbl.querySelectorAll('th[data-k]').forEach(h=>h.onclick=()=>{ curSort=h.dataset.k; load(); });
+}
+
+loadMarkets().catch(e=>{ document.getElementById('markets').innerHTML=`<span class="err">${e.message}</span>`; });
+
+// Live streaming: re-fetch the current view on an interval (server reprices
+// open positions ~every 60s and re-indexes new fills ~every 5min). Paused when
+// the tab is hidden. Market chip stats refresh on a slower cadence.
+const POLL_MS=20000, MKT_POLL_MS=120000;
+setInterval(()=>{ if(!document.hidden) load(true); }, POLL_MS);
+setInterval(()=>{ if(!document.hidden) loadMarkets(true).catch(()=>{}); }, MKT_POLL_MS);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ load(true); } });
+</script>
+</body>
+</html>

@@ -3,6 +3,7 @@
 // the protocol's PDA signs inside the program). The browser passes the serialized
 // bytes to the wallet's Wallet-Standard `solana:signAndSendTransaction`. No bundler.
 "use strict";
+const https = require("https");
 const web3 = require("@solana/web3.js");
 const {
   PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction, ComputeBudgetProgram, SystemProgram,
@@ -43,8 +44,80 @@ const PRICE_CRAWL_SIZE = 519;
 const PRICE_CRAWL_LEGACY = 423;
 const LAYOUT_CPSWAP = 1;
 const LAYOUT_PUMPSWAP = 2;
+const LAYOUT_AMM_POOL = 3;
 const PUMP_SWAP_PROGRAM = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
+const RAYDIUM_CLMM = new PublicKey("CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK");
+const WHIRLPOOL = new PublicKey("whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc");
+const PENDING_CRAWL_PROGRAMS = {
+  LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo: { reason: "meteora_dlmm_pending", layout: LAYOUT_AMM_POOL },
+  cpamdpZCGKUy5JxQXB4dawyN6B5Kf6VhwD4L1EVLL9d: { reason: "meteora_damm_pending", layout: LAYOUT_AMM_POOL },
+};
+const ALT_PROGRAM = new PublicKey("AddressLookupTab1e1111111111111111111111111");
+const WSOL_MINT = "So11111111111111111111111111111111111111112";
+const USDC_MINT_DEFAULT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const SYM_TO_MINT = {
+  SOL: WSOL_MINT, WSOL: WSOL_MINT,
+  BTC: "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij", cbBTC: "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij",
+  ETH: "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs",
+  BONK: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+  SPCXx: "Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8",
+  SPCX: "SPCXxcqXj6e5dJDVNovHN8744zkbhM2bYudU45BimGb",
+};
+const PAIR_HINTS = {
+  "2P7AibymfoondMnceAQzH7iJuiHjDpSmDP3UiYh1pTvB": { sym: "3xSOL", name: "3x SOL LP", underlyingSymbol: "SOL" },
+  "EJf2gAc6QtNLd5nhq97GxMDxFXTULEPbWHKTaUzr8KVG": { sym: "5xBTC", name: "5x BTC LP", underlyingSymbol: "cbBTC" },
+  "CQzeyuxa3cUPjQd2MagKGtQhCb8jgzHverFsCC9aehnM": { sym: "10xSPCXx", name: "10x SPCXx LP", underlyingSymbol: "SPCXx" },
+};
+
+function enrichPairHints(pair) {
+  const h = PAIR_HINTS[pair.receiptMint];
+  return h ? Object.assign({}, pair, h) : pair;
+}
+
+function resolveUnderlyingMint(pair) {
+  if (pair.underlyingMint) return pair.underlyingMint;
+  const us = pair.underlyingSymbol;
+  if (us && SYM_TO_MINT[us]) return SYM_TO_MINT[us];
+  const hay = (pair.name || "") + " " + (pair.sym || "") + " " + (us || "");
+  for (const [sym, mint] of Object.entries(SYM_TO_MINT)) {
+    if (new RegExp("\\b" + sym + "\\b", "i").test(hay)) return mint;
+  }
+  return null;
+}
+const MAX_CRAWL_VENUES = 12;
+const LUT_META_SIZE = 56;
 const ZERO_PK = new PublicKey("11111111111111111111111111111111");
+
+function httpsJson(host, path) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname: host, path, method: "GET", headers: { accept: "application/json" } }, (res) => {
+      let body = "";
+      res.on("data", (c) => { body += c; });
+      res.on("end", () => {
+        try { resolve(JSON.parse(body)); }
+        catch (e) { reject(e); }
+      });
+    });
+    req.on("error", reject);
+    req.setTimeout(15000, () => req.destroy(new Error("https timeout")));
+    req.end();
+  });
+}
+
+function lutAddressList(buf) {
+  const out = [];
+  if (!buf || buf.length < LUT_META_SIZE) return out;
+  for (let i = 0; i < Math.floor((buf.length - LUT_META_SIZE) / 32); i++) {
+    const pk = rdPk(buf, LUT_META_SIZE + i * 32);
+    if (!pk.equals(ZERO_PK)) out.push(pk);
+  }
+  return out;
+}
+
+function pendingLayoutProgram(owner) {
+  const hit = PENDING_CRAWL_PROGRAMS[owner.toBase58()];
+  return hit ? { skip: true, ...hit } : null;
+}
 
 function readBorshStr(buf, off) {
   if (off + 4 > buf.length) return ["", off];
@@ -154,7 +227,9 @@ function parsePriceCrawl(buf) {
   const layoutOff = buf.length >= PRICE_CRAWL_SIZE ? 155 : 123;
   for (let i = 0; i < 12; i++) layouts.push(buf[layoutOff + i]);
   const hookPool = buf.length >= PRICE_CRAWL_SIZE ? rdPk(buf, 59).toBase58() : null;
-  return { cursor, pass, numEntries, aggregateWad: aggregateWad.toString(), layouts, hookPool };
+  const priceBaseMint = buf.length >= PRICE_CRAWL_SIZE ? rdPk(buf, 455).toBase58() : null;
+  const quoteAltMint = buf.length >= PRICE_CRAWL_SIZE ? rdPk(buf, 487).toBase58() : null;
+  return { cursor, pass, numEntries, aggregateWad: aggregateWad.toString(), layouts, hookPool, priceBaseMint, quoteAltMint };
 }
 
 function cpswapVaultsFromPool(conn, poolPk, baseMint, quoteMint) {
@@ -170,19 +245,188 @@ function cpswapVaultsFromPool(conn, poolPk, baseMint, quoteMint) {
   });
 }
 
-async function crawlVenueAt(conn, rootLut, cursor, baseMint, quoteMint) {
+function ammPoolVenue(poolPk) {
+  return { pool: poolPk, baseVault: poolPk, quoteVault: poolPk, layout: LAYOUT_AMM_POOL };
+}
+
+function clmmMintsMatchPool(d, priceBaseMint, quoteMints) {
+  const base = new PublicKey(priceBaseMint);
+  const m0 = rdPk(d, 8 + 65), m1 = rdPk(d, 8 + 97);
+  for (const q of quoteMints) {
+    const quote = new PublicKey(q);
+    if (m0.equals(base) && m1.equals(quote)) return q;
+    if (m1.equals(base) && m0.equals(quote)) return q;
+  }
+  return null;
+}
+
+function whirlpoolMintsMatchPool(d, priceBaseMint, quoteMints) {
+  const base = new PublicKey(priceBaseMint);
+  const ma = rdPk(d, 8 + 101), mb = rdPk(d, 8 + 181);
+  for (const q of quoteMints) {
+    const quote = new PublicKey(q);
+    if (ma.equals(base) && mb.equals(quote)) return q;
+    if (mb.equals(base) && ma.equals(quote)) return q;
+  }
+  return null;
+}
+
+async function crawlVenueAt(conn, rootLut, cursor, priceBaseMint, quoteMints) {
   const lutAi = await conn.getAccountInfo(rootLut, "confirmed");
   if (!lutAi) throw new Error("root LUT missing");
-  const off = 56 + cursor * 32;
+  const off = LUT_META_SIZE + cursor * 32;
   const poolPk = rdPk(lutAi.data, off);
   if (poolPk.equals(ZERO_PK)) throw new Error("empty LUT slot " + cursor);
   const poolAi = await conn.getAccountInfo(poolPk, "confirmed");
   if (!poolAi) throw new Error("pool missing at LUT[" + cursor + "]");
+  const quotes = quoteMints || [USDC_MINT_DEFAULT];
+  if (poolAi.owner.equals(WHIRLPOOL)) {
+    if (whirlpoolMintsMatchPool(poolAi.data, priceBaseMint, quotes)) return ammPoolVenue(poolPk);
+    throw new Error("whirlpool mints mismatch for LUT[" + cursor + "] " + poolPk.toBase58());
+  }
+  if (poolAi.owner.equals(RAYDIUM_CLMM)) {
+    if (clmmMintsMatchPool(poolAi.data, priceBaseMint, quotes)) return ammPoolVenue(poolPk);
+    throw new Error("clmm mints mismatch for LUT[" + cursor + "] " + poolPk.toBase58());
+  }
   if (poolAi.owner.equals(PUMP_SWAP_PROGRAM)) {
     const { baseVault, quoteVault } = pumpswapVaultsFromPoolData(poolAi.data);
     return { pool: poolPk, baseVault, quoteVault, layout: LAYOUT_PUMPSWAP };
   }
-  return cpswapVaultsFromPool(conn, poolPk, baseMint, quoteMint);
+  for (const q of quotes) {
+    try {
+      return await cpswapVaultsFromPool(conn, poolPk, priceBaseMint, q);
+    } catch (e) { /* try next quote */ }
+  }
+  throw new Error("pool mints mismatch for LUT[" + cursor + "] " + poolPk.toBase58());
+}
+
+async function classifyCrawlPoolFromAi(poolId, ai, priceBaseMint, quoteMints, conn) {
+  if (!ai) return null;
+  const base = new PublicKey(priceBaseMint);
+  if (ai.owner.equals(CP)) {
+    const d = ai.data;
+    const t0 = rdPk(d, 8 + 160), t1 = rdPk(d, 8 + 192);
+    const v0 = rdPk(d, 8 + 64), v1 = rdPk(d, 8 + 96);
+    for (const q of quoteMints) {
+      const quote = new PublicKey(q);
+      if (t0.equals(base) && t1.equals(quote)) {
+        return { pool: poolId, layout: LAYOUT_CPSWAP, program: ai.owner.toBase58(), quoteMint: q, baseVault: v0.toBase58(), quoteVault: v1.toBase58() };
+      }
+      if (t1.equals(base) && t0.equals(quote)) {
+        return { pool: poolId, layout: LAYOUT_CPSWAP, program: ai.owner.toBase58(), quoteMint: q, baseVault: v1.toBase58(), quoteVault: v0.toBase58() };
+      }
+    }
+    return null;
+  }
+  if (ai.owner.equals(WHIRLPOOL)) {
+    const q = whirlpoolMintsMatchPool(ai.data, priceBaseMint, quoteMints);
+    if (q) {
+      return { pool: poolId, layout: LAYOUT_AMM_POOL, program: ai.owner.toBase58(), quoteMint: q };
+    }
+    return null;
+  }
+  if (ai.owner.equals(RAYDIUM_CLMM)) {
+    const q = clmmMintsMatchPool(ai.data, priceBaseMint, quoteMints);
+    if (q) {
+      return { pool: poolId, layout: LAYOUT_AMM_POOL, program: ai.owner.toBase58(), quoteMint: q };
+    }
+    return null;
+  }
+  if (ai.owner.equals(PUMP_SWAP_PROGRAM)) {
+    const { baseVault, quoteVault } = pumpswapVaultsFromPoolData(ai.data);
+    const [bvAi, qvAi] = await Promise.all([
+      conn.getAccountInfo(baseVault, "confirmed"),
+      conn.getAccountInfo(quoteVault, "confirmed"),
+    ]);
+    if (!bvAi || !qvAi) return null;
+    const bm = rdPk(bvAi.data, 0), qm = rdPk(qvAi.data, 0);
+    for (const q of quoteMints) {
+      const quote = new PublicKey(q);
+      if ((bm.equals(base) && qm.equals(quote)) || (qm.equals(base) && bm.equals(quote))) {
+        return { pool: poolId, layout: LAYOUT_PUMPSWAP, program: ai.owner.toBase58(), quoteMint: q, baseVault: baseVault.toBase58(), quoteVault: quoteVault.toBase58() };
+      }
+    }
+  }
+  return null;
+}
+
+async function classifyCrawlPool(conn, poolId, priceBaseMint, quoteMints) {
+  const ai = await conn.getAccountInfo(new PublicKey(poolId), "confirmed");
+  if (!ai) return null;
+  const pending = pendingLayoutProgram(ai.owner);
+  if (pending) return { pool: poolId, ...pending };
+  return classifyCrawlPoolFromAi(poolId, ai, priceBaseMint, quoteMints, conn);
+}
+
+/**
+ * Discover deserialize-able AMM venues for price_crawl (Raydium CP, PumpSwap,
+ * Raydium CLMM, Orca Whirlpool live; Meteora still pending).
+ */
+async function discoverCrawlVenues(conn, { baseMint, usdcMint, wsolMint, maxVenues }) {
+  if (!baseMint) throw new Error("baseMint required");
+  const priceBase = baseMint;
+  const quotes = [usdcMint || USDC_MINT_DEFAULT, wsolMint || WSOL_MINT];
+  const cap = Math.min(maxVenues || MAX_CRAWL_VENUES, MAX_CRAWL_VENUES);
+  const seen = new Set();
+  const candidates = [];
+
+  for (const quote of quotes) {
+    try {
+      const pools = await httpsJson(
+        "api-v3.raydium.io",
+        "/pools/info/mint?mint1=" + encodeURIComponent(priceBase) + "&mint2=" + encodeURIComponent(quote)
+          + "&poolType=all&poolSortField=liquidity&sortType=desc&pageSize=24&page=1",
+      );
+      for (const p of ((pools.data || {}).data) || []) {
+        if (!p || !p.id || seen.has(p.id)) continue;
+        seen.add(p.id);
+        candidates.push({ pool: p.id, source: "raydium", tvl: Number(p.tvl) || 0, dex: p.type || "standard" });
+      }
+    } catch (e) { /* raydium optional */ }
+  }
+
+  try {
+    const data = await httpsJson("api.dexscreener.com", "/latest/dex/tokens/" + encodeURIComponent(priceBase));
+    for (const p of data.pairs || []) {
+      if (!p || p.chainId !== "solana" || !p.pairAddress || seen.has(p.pairAddress)) continue;
+      const q = p.quoteToken && p.quoteToken.address;
+      if (!q || !quotes.includes(q)) continue;
+      const dex = (p.dexId || "").toLowerCase();
+      seen.add(p.pairAddress);
+      candidates.push({
+        pool: p.pairAddress,
+        source: dex || "dexscreener",
+        tvl: Number((p.liquidity && p.liquidity.usd) || 0),
+        dex,
+      });
+    }
+  } catch (e) { /* dexscreener optional */ }
+
+  candidates.sort((a, b) => (b.tvl || 0) - (a.tvl || 0));
+
+  const venues = [];
+  const skipped = [];
+  const need = candidates.slice(0, Math.min(candidates.length, cap * 3));
+  const poolPks = need.map((c) => new PublicKey(c.pool));
+  const infos = poolPks.length ? await conn.getMultipleAccountsInfo(poolPks, "confirmed") : [];
+  for (let i = 0; i < need.length && venues.length < cap; i++) {
+    const c = need[i];
+    const ai = infos[i];
+    if (!ai) continue;
+    const owner = ai.owner;
+    const pending = pendingLayoutProgram(owner);
+    if (pending) { skipped.push({ ...c, ...pending }); continue; }
+    const hit = await classifyCrawlPoolFromAi(c.pool, ai, priceBase, quotes, conn);
+    if (!hit) continue;
+    venues.push({ index: venues.length, ...hit, source: c.source, tvl: c.tvl });
+  }
+  return {
+    priceBaseMint: priceBase,
+    quoteMint: usdcMint || USDC_MINT_DEFAULT,
+    quoteAltMint: wsolMint || WSOL_MINT,
+    venues,
+    skipped,
+  };
 }
 
 async function loadPairFromReceipt(conn, programId, receiptMint) {
@@ -283,7 +527,7 @@ async function buildHookEmbeds(conn, programId, pair) {
   return embeds;
 }
 
-async function buildInitPriceCrawl(conn, { programId, admin, pair, numEntries, layouts, initAggregateWad }) {
+async function buildInitPriceCrawl(conn, { programId, admin, pair, numEntries, layouts, initAggregateWad, priceBaseMint, quoteAltMint }) {
   const { PROGRAM, config } = pdas(programId, pair);
   const owner = new PublicKey(admin);
   const [crawl, crawlBump] = priceCrawlPda(programId, config.toBase58());
@@ -291,11 +535,15 @@ async function buildInitPriceCrawl(conn, { programId, admin, pair, numEntries, l
   const layoutBuf = Buffer.alloc(12);
   for (let i = 0; i < 12; i++) layoutBuf[i] = (layouts && layouts[i]) || 0;
   const initWad = BigInt(initAggregateWad || 0);
+  const priceBase = new PublicKey(priceBaseMint || ZERO_PK);
+  const quoteAlt = new PublicKey(quoteAltMint || ZERO_PK);
   const data = Buffer.concat([
     Buffer.from([15, crawlBump, numEntries || 1]),
     layoutBuf,
     u128(initWad),
     u64(rent),
+    priceBase.toBuffer(),
+    quoteAlt.toBuffer(),
   ]);
   const ixs = [
     ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
@@ -320,16 +568,26 @@ async function buildAdvanceCrawl(conn, { programId, payer, pair, slot }) {
   const crawlAi = await conn.getAccountInfo(crawl, "confirmed");
   const parsed = parsePriceCrawl(crawlAi && crawlAi.data);
   if (!parsed || !parsed.numEntries) throw new Error("price_crawl not initialized");
-  const venue = await crawlVenueAt(conn, rootLut, parsed.cursor, pair.mintA, pair.quoteMint);
+  const priceBase = parsed.priceBaseMint && parsed.priceBaseMint !== ZERO_PK.toBase58()
+    ? parsed.priceBaseMint : pair.mintA;
+  const quotes = [pair.quoteMint || USDC_MINT_DEFAULT];
+  if (parsed.quoteAltMint && parsed.quoteAltMint !== ZERO_PK.toBase58()) quotes.push(parsed.quoteAltMint);
+  const venue = await crawlVenueAt(conn, rootLut, parsed.cursor, priceBase, quotes);
+  const keys = [
+    k(crawl, true), k(config, false), k(rootLut, false), k(venue.pool, false),
+    k(venue.baseVault, false), k(venue.quoteVault, false),
+  ];
+  if (parsed.numEntries > 1) {
+    const nextCur = (parsed.cursor + 1) % parsed.numEntries;
+    const nextVenue = await crawlVenueAt(conn, rootLut, nextCur, priceBase, quotes);
+    keys.push(k(nextVenue.pool, false), k(nextVenue.baseVault, false), k(nextVenue.quoteVault, false));
+  }
   const recentSlot = slot != null ? BigInt(slot) : BigInt(await conn.getSlot("confirmed"));
   const ixs = [
     ComputeBudgetProgram.setComputeUnitLimit({ units: 250_000 }),
     new TransactionInstruction({
       programId: PROGRAM,
-      keys: [
-        k(crawl, true), k(config, false), k(rootLut, false), k(venue.pool, false),
-        k(venue.baseVault, false), k(venue.quoteVault, false),
-      ],
+      keys,
       data: Buffer.concat([Buffer.from([16]), u64(recentSlot)]),
     }),
   ];
@@ -749,11 +1007,125 @@ async function buildInitHookMetas(conn, { programId, user, pair }) {
   return { tx: await pack(conn, owner, ixs), metaList: metaList.toBase58(), skipped: false };
 }
 
+/**
+ * Build admin ixs to seed price_crawl LUT + layouts from discovered venues.
+ * Pass underlyingMint (WSOL, cbBTC, …) — not the synth mint_a.
+ */
+async function buildSeedCrawlVenues(conn, { programId, admin, pair, underlyingMint, usdcMint, wsolMint, venues: presetVenues }) {
+  const { PROGRAM, config, authority } = pdas(programId, pair);
+  const owner = new PublicKey(admin);
+  const baseMint = underlyingMint || pair.underlyingMint;
+  if (!baseMint) throw new Error("underlyingMint required for crawl venue discovery");
+  const discovered = presetVenues
+    ? { priceBaseMint: baseMint, quoteAltMint: wsolMint || WSOL_MINT, venues: presetVenues, skipped: [] }
+    : await discoverCrawlVenues(conn, { baseMint, usdcMint: usdcMint || pair.quoteMint, wsolMint });
+  if (!discovered.venues.length) throw new Error("no deserialize-able crawl venues for " + baseMint);
+
+  const [crawl, crawlBump] = priceCrawlPda(programId, config.toBase58());
+  const cfgAi = await conn.getAccountInfo(config, "confirmed");
+  if (!cfgAi) throw new Error("config missing");
+  const ixs = [ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })];
+  let rootLut = cfgAi.data.length >= O_LOOKUP_TABLE + 32 ? rdPk(cfgAi.data, O_LOOKUP_TABLE) : ZERO_PK;
+  let lutAi = rootLut.equals(ZERO_PK) ? null : await conn.getAccountInfo(rootLut, "confirmed");
+  const have = lutAi ? lutAddressList(lutAi.data) : [];
+  const byPool = new Map(discovered.venues.map((v) => [v.pool, v]));
+  const lutStale = (pks) => pks.some((pk, i) => i < MAX_CRAWL_VENUES && !pk.equals(ZERO_PK) && !byPool.has(pk.toBase58()));
+  if (!rootLut.equals(ZERO_PK) && lutStale(have)) {
+    rootLut = ZERO_PK;
+    lutAi = null;
+  }
+  const ordered = [];
+  for (const v of discovered.venues) ordered.push(v);
+  discovered.venues = ordered.slice(0, MAX_CRAWL_VENUES).map((v, i) => Object.assign({ index: i }, v));
+
+  if (rootLut.equals(ZERO_PK)) {
+    const slot = BigInt((await conn.getSlot("confirmed")) - 1);
+    const slotBuf = u64(slot);
+    const [lut, lutBump] = PublicKey.findProgramAddressSync([authority.toBuffer(), slotBuf], ALT_PROGRAM);
+    rootLut = lut;
+    ixs.push(new TransactionInstruction({
+      programId: PROGRAM,
+      keys: [k(owner, true, true), k(config, true), k(authority, false), k(lut, true), k(ALT_PROGRAM, false), k(SYS, false)],
+      data: Buffer.concat([Buffer.from([8]), slotBuf, Buffer.from([lutBump])]),
+    }));
+  }
+
+  lutAi = await conn.getAccountInfo(rootLut, "confirmed");
+  const have2 = lutAi ? lutAddressList(lutAi.data) : [];
+  const haveSet = new Set(have2.map((p) => p.toBase58()));
+
+  for (const v of discovered.venues) {
+    const poolPk = new PublicKey(v.pool);
+    if (haveSet.has(v.pool)) continue;
+    ixs.push(new TransactionInstruction({
+      programId: PROGRAM,
+      keys: [k(owner, true, true), k(config, false), k(authority, false), k(rootLut, true), k(ALT_PROGRAM, false), k(SYS, false)],
+      data: Buffer.concat([Buffer.from([9]), poolPk.toBuffer()]),
+    }));
+    have.push(poolPk);
+    haveSet.add(v.pool);
+  }
+
+  const crawlAi = await conn.getAccountInfo(crawl, "confirmed");
+  const n = discovered.venues.length;
+  const layoutBuf = Buffer.alloc(12);
+  for (let i = 0; i < n; i++) layoutBuf[i] = discovered.venues[i].layout;
+
+  if (!crawlAi) {
+    const rent = BigInt(await conn.getMinimumBalanceForRentExemption(PRICE_CRAWL_SIZE));
+    ixs.push(new TransactionInstruction({
+      programId: PROGRAM,
+      keys: [k(owner, true, true), k(config, false), k(crawl, true), k(SYS, false)],
+      data: Buffer.concat([
+        Buffer.from([15, crawlBump, n]),
+        layoutBuf,
+        u128(0n),
+        u64(rent),
+        new PublicKey(discovered.priceBaseMint).toBuffer(),
+        new PublicKey(discovered.quoteAltMint || ZERO_PK).toBuffer(),
+      ]),
+    }));
+  } else {
+    ixs.push(new TransactionInstruction({
+      programId: PROGRAM,
+      keys: [k(owner, true, true), k(config, false), k(crawl, true)],
+      data: Buffer.concat([
+        Buffer.from([22]),
+        new PublicKey(discovered.priceBaseMint).toBuffer(),
+        new PublicKey(discovered.quoteAltMint || ZERO_PK).toBuffer(),
+      ]),
+    }));
+    ixs.push(new TransactionInstruction({
+      programId: PROGRAM,
+      keys: [k(owner, true, true), k(config, false), k(crawl, true)],
+      data: Buffer.concat([Buffer.from([21]), Buffer.from([n])]),
+    }));
+    for (let i = 0; i < n; i++) {
+      ixs.push(new TransactionInstruction({
+        programId: PROGRAM,
+        keys: [k(owner, true, true), k(config, false), k(crawl, true)],
+        data: Buffer.from([17, i, discovered.venues[i].layout]),
+      }));
+    }
+  }
+
+  return {
+    ...discovered,
+    numEntries: n,
+    priceCrawl: crawl.toBase58(),
+    rootLut: rootLut.toBase58(),
+    tx: await pack(conn, owner, ixs),
+    ixs,
+  };
+}
+
 module.exports = {
   buildDeposit, buildWithdraw, buildBackfillMetadata, buildPatchMetadata, buildInitHookMetas,
-  buildInitPriceCrawl, buildAdvanceCrawl, priceCrawlPda, parsePriceCrawl, crawlVenueAt,
+  buildInitPriceCrawl, buildAdvanceCrawl, buildSeedCrawlVenues,
+  discoverCrawlVenues, classifyCrawlPool, priceCrawlPda, parsePriceCrawl, crawlVenueAt,
   loadPairFromReceipt, listPairs, findIncompletePairs, hookMetaExists, hookVaults, buildHookEmbeds,
   mintHasMetadata, readMintMeta, canonicalPairMeta, pairLeverage,
-  ORACLE_CRAWL, LAYOUT_CPSWAP, LAYOUT_PUMPSWAP,
+  ORACLE_CRAWL, LAYOUT_CPSWAP, LAYOUT_PUMPSWAP, LAYOUT_AMM_POOL,
   CRAWL_HOOK_META_COUNT, CRAWL_HOOK_PATCH_EMBED_COUNT, hookMetaCount, hookWritableMask,
+  WSOL_MINT, USDC_MINT_DEFAULT, MAX_CRAWL_VENUES, resolveUnderlyingMint, enrichPairHints, PAIR_HINTS,
 };

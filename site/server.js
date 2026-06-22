@@ -10,6 +10,20 @@
 //   - accumulates a time series by polling, so /api/charts fills in as it observes
 //   - normalizes to USD via the USDC-quoted pool (quote==USDC ⇒ 1:1)
 "use strict";
+
+// Load a gitignored .env (dev only) for secrets like JUPITER_ULTRA_KEY /
+// DATABASE_URL. In prod these come from real env / fly secrets. Zero-dep parser.
+(function loadDotenv() {
+  try {
+    const fs0 = require("fs"), path0 = require("path");
+    const f = path0.join(__dirname, ".env");
+    if (!fs0.existsSync(f)) return;
+    for (const line of fs0.readFileSync(f, "utf8").split("\n")) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+      if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+    }
+  } catch { /* no .env — fine */ }
+})();
 const http = require("http");
 const https = require("https");
 const fs = require("fs");
@@ -19,6 +33,22 @@ const web3 = require("@solana/web3.js");
 const { getTokenMetadata, TOKEN_2022_PROGRAM_ID } = require("@solana/spl-token");
 const txbuild = require("./txbuild.js");
 const fluxbeam = require("./fluxbeam.js");
+
+// Zero-dep .env.local loader: only fills vars that aren't already in the
+// environment, so production (fly.io secrets) and CI always win. Lets a plain
+// `node server.js` pick up DATABASE_URL / RPC_URL for local + preview runs.
+(function loadDotenvLocal() {
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, ".env.local"), "utf8");
+    for (const line of raw.split("\n")) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+      if (!m) continue;
+      const k = m[1]; let v = m[2].trim();
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+      if (process.env[k] === undefined) process.env[k] = v;
+    }
+  } catch { /* no .env.local — fine in prod */ }
+})();
 
 const PORT = process.env.PORT || 8080;
 const PUBLIC = path.join(__dirname, "public");
@@ -35,6 +65,13 @@ const GPA_MS = +(process.env.GPA_MS || 45000);
 const web3conn = new web3.Connection(RPC_URL, "confirmed"); // for the deposit/withdraw tx builder
 const { PublicKey } = web3;
 const CP = new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
+// Per-market long/short/lp leaderboards (DB-backed). Loaded lazily so the site
+// still boots when DATABASE_URL isn't set (leaderboard routes then 503).
+let lbApi = null, lbIndexer = null;
+try { lbApi = require("./leaderboard/api"); lbIndexer = require("./leaderboard/indexer"); }
+catch (e) { console.error("leaderboard module load failed:", e.message); }
+// Raydium CP-Swap authority PDA — owns the pool vaults; never a real position.
+const LB_EXCLUDE = ["GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL"];
 const ZERO = "11111111111111111111111111111111";
 const CONFIG_MIN_SIZE = 400; // legacy pinocchio Config
 const CONFIG_SIZE = 432; // current (adds PumpSwap oracle fields past byte 400)
@@ -611,6 +648,8 @@ function annotatePairLabels(rows) {
 // ---- payloads (GPA + on-chain metadata; never invented) ----
 function regPair(key) {
   if (!key) return null;
+  const byConfig = REGISTRY.find((p) => p.config === key);
+  if (byConfig) return byConfig;
   const byMint = REGISTRY.find((p) => p.receiptMint === key);
   if (byMint) return byMint;
   const bySym = REGISTRY.filter((p) => p.sym === key);
@@ -690,7 +729,7 @@ async function pairsPayload(opts) {
     }
     out.push({
       name: p.name, sym: p.sym, theme: p.theme, quote: p.quote, tvl,
-      apr: ap ? ap.total : null, nav: last ? last.nav : null,
+      apr: ap ? ap.total : null, aprNote: ap ? null : apyNote(sk), nav: last ? last.nav : null,
       config: p.config, receiptMint: p.receiptMint, mintA: p.mintA, mintB: p.mintB,
       underlyingMint: um, underlyingSymbol: (ui && ui.symbol) || p.underlyingSymbol || null,
       logo: p.logo || (ui && ui.logo) || null,
@@ -859,6 +898,99 @@ async function refreshStatus() {
   catch (e) { /* leave as-is on transient rpc error */ }
 }
 
+// ── Comments: 0.1-SOL + memo transfers to the dev wallet, indexed by CA + side.
+// memo format: `mim|<ca>|<long|short>|<text>` (+ optional `|re=<parentSig>`).
+const COMMENT_DEV = "CnkHq3wRSsegjpJJvvRWb1uiCJvPMAYW6b7P1Yq8FpCT";
+const COMMENT_MIN_LAMPORTS = 100000000; // 0.1 SOL — per-market comment
+const TROLL_MIN_LAMPORTS = 10000000;    // 0.01 SOL — global trollbox
+const COMMENT_CACHE = new Map(); // sig -> parsed | null (memoized)
+let COMMENT_SIGS = [];
+let COMMENT_SIGS_AT = 0;
+function splitTail(rest) {
+  let parent = null;
+  if (rest.length && rest[rest.length - 1].indexOf("re=") === 0) { parent = rest[rest.length - 1].slice(3); rest = rest.slice(0, -1); }
+  return { text: rest.join("|").slice(0, 280), parent };
+}
+function parseCommentTx(tx, sig) {
+  if (!tx || !tx.transaction || !tx.transaction.message) return null;
+  const keys = tx.transaction.message.accountKeys || [];
+  const ixs = tx.transaction.message.instructions || [];
+  let memo = null, lamports = 0;
+  for (const ix of ixs) {
+    if (ix.program === "spl-memo" && typeof ix.parsed === "string") memo = ix.parsed;
+    if (ix.program === "system" && ix.parsed && ix.parsed.type === "transfer" && ix.parsed.info && ix.parsed.info.destination === COMMENT_DEV)
+      lamports = Math.max(lamports, Number(ix.parsed.info.lamports) || 0);
+  }
+  if (!memo || memo.indexOf("mim|") !== 0) return null;
+  const parts = memo.split("|");
+  const k0 = keys[0];
+  const wallet = typeof k0 === "string" ? k0 : (k0 && k0.pubkey) || null;
+  const t = (tx.blockTime || 0) * 1000;
+  if (!wallet) return null;
+  if (parts[1] === "global") {
+    if (lamports < TROLL_MIN_LAMPORTS) return null;
+    const { text, parent } = splitTail(parts.slice(2));
+    if (!text) return null;
+    return { sig, wallet, ca: "global", side: null, text, parent, t, global: true };
+  }
+  if (lamports < COMMENT_MIN_LAMPORTS || parts.length < 4) return null;
+  const ca = parts[1], side = parts[2] === "short" ? "short" : "long";
+  const { text, parent } = splitTail(parts.slice(3));
+  if (!text || !ca) return null;
+  return { sig, wallet, ca, side, text, parent, t, global: false };
+}
+// Incrementally ingest new comment/trollbox txs from the dev wallet into Neon
+// (lev_comments). Idempotent (sig PK); COMMENT_CACHE is an in-memory seen-set so
+// we only getTransaction each sig once. Reads come from the DB, so history never
+// ages out of the RPC window.
+let scanBusy = false;
+// getSignaturesForAddress returns each sig's memo — so we only getTransaction the
+// rare `mim|` candidates (cheap even under heavy keeper traffic), then verify the
+// transfer + insert into Neon. Idempotent; COMMENT_CACHE is the in-memory seen-set.
+async function ingestSig(s) {
+  const sig = s.signature || s;
+  if (COMMENT_CACHE.has(sig)) return;
+  const memo = typeof s === "object" ? s.memo : null;
+  if (memo != null && memo.indexOf("mim|") < 0) { COMMENT_CACHE.set(sig, true); return; } // not a comment — safe to cache
+  // candidate: only mark seen AFTER it's successfully fetched + stored, so an
+  // RPC/DB hiccup retries next scan instead of dropping the comment forever.
+  try {
+    const tx = await rpc("getTransaction", [sig, { maxSupportedTransactionVersion: 0, encoding: "jsonParsed" }]);
+    const c = parseCommentTx(tx, sig);
+    if (c) {
+      try { await lbApi.insertComment(c); }
+      catch (e) { console.error("comment INSERT FAIL:", e.message); }
+    }
+    COMMENT_CACHE.set(sig, true);
+  } catch (e) { /* leave uncached → retry next scan */ }
+}
+async function scanCommentsToDb() {
+  if (scanBusy || !process.env.DATABASE_URL || !lbApi) return;
+  scanBusy = true;
+  try {
+    const sigs = await rpc("getSignaturesForAddress", [COMMENT_DEV, { limit: 300 }]);
+    for (const s of sigs || []) await ingestSig(s);
+    if (COMMENT_CACHE.size > 80000) COMMENT_CACHE.clear();
+  } catch (e) { /* keep last */ }
+  finally { scanBusy = false; }
+}
+// one-time deep walk back through history to recover comments that aged out of
+// the recent window (cheap: only mim| candidates are fetched).
+async function backfillComments() {
+  if (!process.env.DATABASE_URL || !lbApi) return;
+  let before, pages = 0;
+  try {
+    while (pages < 25) {
+      const sigs = await rpc("getSignaturesForAddress", [COMMENT_DEV, before ? { limit: 1000, before } : { limit: 1000 }]);
+      if (!sigs || !sigs.length) break;
+      for (const s of sigs) if (s.memo && s.memo.indexOf("mim|") >= 0) await ingestSig(s);
+      before = sigs[sigs.length - 1].signature;
+      pages++;
+    }
+    console.log("comment backfill: walked", pages, "pages");
+  } catch (e) { console.error("comment backfill:", e.message); }
+}
+
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
   const p = u.pathname;
@@ -910,7 +1042,7 @@ const server = http.createServer(async (req, res) => {
       rebalancePath: "receipt_transfer_hook",
       priceCrawl: {
         enabled: true,
-        instructions: { init: 15, advance: 16, setEntry: 17 },
+        instructions: { init: 15, advance: 16, setEntry: 17, setNum: 21, setMints: 22 },
         oracleKind: ORACLE_CRAWL,
         maxEntries: 12,
         layouts: { cpswap: 1, pumpswap: 2 },
@@ -977,6 +1109,17 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return json(res, { error: "lookup failed", message: String(e.message || e) }, 502); }
   }
   // build an UNSIGNED deposit/withdraw tx for the connected wallet to sign+send.
+  if (p === "/api/crawl-venues") {
+    const base = q("baseMint", "");
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(base)) return json(res, { error: "bad baseMint" }, 400);
+    try {
+      return json(res, await txbuild.discoverCrawlVenues(web3conn, {
+        baseMint: base,
+        usdcMint: USDC_MINT,
+        wsolMint: WSOL_MINT,
+      }));
+    } catch (e) { return json(res, { error: "discover failed", message: String(e.message || e) }, 502); }
+  }
   if (p === "/api/tx/advance-crawl") {
     await ensureRegistry();
     const sym = q("sym", ""), owner = q("owner", ""), lookup = regPairOrAmbiguous(sym);
@@ -1135,8 +1278,132 @@ const server = http.createServer(async (req, res) => {
     } catch (e) { return json(res, { error: "build failed", message: String(e.message || e) }, 502); }
   }
 
+  // ---- per-market leaderboards (long / short / lp) ----
+  if (p === "/api/leaderboard/markets") {
+    if (!process.env.DATABASE_URL || !lbApi) return json(res, { error: "leaderboard db not configured" }, 503);
+    try {
+      // keep DB display metadata fresh from the on-chain registry (best-effort)
+      lbApi.syncMarketMeta(REGISTRY.map((r) => ({ config: r.config, sym: r.symDisplay || r.sym, name: r.name, logo: r.logo }))).catch(() => {});
+      const out = await lbApi.listMarkets({
+        q: q("q", ""), sort: q("sort", "pnl"), order: q("order", "desc"),
+        limit: q("limit", "200"), offset: q("offset", "0"),
+      });
+      return json(res, out);
+    } catch (e) { return json(res, { error: String(e.message || e) }, 500); }
+  }
+  if (p === "/api/leaderboard") {
+    if (!process.env.DATABASE_URL || !lbApi) return json(res, { error: "leaderboard db not configured" }, 503);
+    const market = q("market", ""), leg = q("leg", "ls");
+    // accept config directly, or resolve a receiptMint / sym to its config
+    const pr = regPair(market);
+    const cfg = pr ? pr.config : market;
+    if (!cfg) return json(res, { error: "market required (config / receiptMint / sym)" }, 400);
+    try {
+      const out = await lbApi.table({
+        market: cfg, leg,
+        limit: q("limit", "100"), offset: q("offset", "0"), sort: q("sort", "pnl"),
+        hideEmpty: q("dust", "hide") !== "show",
+        excludeWallets: LB_EXCLUDE.concat([PROGRAM_ID, cfg]),
+      });
+      return json(res, out);
+    } catch (e) { return json(res, { error: String(e.message || e) }, 500); }
+  }
+
+  // ---- Jupiter Ultra proxy (spot buy/sell of the leveraged leg tokens) ----
+  // Key stays server-side (JUPITER_ULTRA_KEY) and never ships to the client.
+  // GET /api/jup/order  — quote + build tx (TTL-cached). POST /api/jup/execute — land the signed tx.
+  if (p === "/api/jup/order" || p === "/api/jup/execute") {
+    const KEY = process.env.JUPITER_ULTRA_KEY;
+    if (!KEY) return json(res, { error: "JUPITER_ULTRA_KEY not configured" }, 503);
+    const isExec = p.endsWith("execute");
+    const fwd = (payload) => new Promise((resolve, reject) => {
+      const path = isExec ? "/ultra/v1/execute" : "/ultra/v1/order" + u.search;
+      const headers = { "x-api-key": KEY, accept: "application/json" };
+      if (isExec) { headers["content-type"] = "application/json"; headers["content-length"] = Buffer.byteLength(payload); }
+      const r = https.request({ hostname: "api.jup.ag", path, method: isExec ? "POST" : "GET", port: 443, headers }, (pr) => {
+        let b = ""; pr.on("data", (d) => (b += d)); pr.on("end", () => resolve({ status: pr.statusCode || 502, body: b }));
+      });
+      r.on("error", reject); r.setTimeout(20000, () => r.destroy(new Error("jup timeout")));
+      if (isExec) r.write(payload);
+      r.end();
+    });
+    const sendThrough = ({ status, body }) => { res.writeHead(status, { "content-type": "application/json", "access-control-allow-origin": "*" }); res.end(body); };
+    if (!isExec) {
+      const cache = (globalThis.__jupCache ||= new Map());
+      const ck = u.search;
+      const hit = cache.get(ck);
+      if (hit && Date.now() - hit.t < 1500) return sendThrough({ status: 200, body: hit.b });
+      try {
+        const out = await fwd(null);
+        if (out.status === 200) { cache.set(ck, { t: Date.now(), b: out.body }); if (cache.size > 500) cache.clear(); }
+        return sendThrough(out);
+      } catch (e) { return json(res, { error: "jup proxy", message: String(e.message || e) }, 502); }
+    }
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", async () => {
+      try { sendThrough(await fwd(body)); }
+      catch (e) { json(res, { error: "jup execute", message: String(e.message || e) }, 502); }
+    });
+    return;
+  }
+
+  // comments feed for a market (from Neon) — memos reference a leg MINT; match any
+  // of the pair's mints (receipt / +leg / −leg), side tagged by leg.
+  if (p === "/api/comments") {
+    if (!process.env.DATABASE_URL || !lbApi) return json(res, { error: "leaderboard db not configured" }, 503);
+    const market = q("market", "");
+    await ensureRegistry();
+    const pr = market ? regPair(market) : null;
+    if (!pr) return json(res, { comments: [], dev: COMMENT_DEV });
+    const mints = [pr.receiptMint, pr.mintA, pr.mintB].filter(Boolean);
+    const roles = { [pr.mintA]: "long", [pr.mintB]: "short" };
+    try {
+      const out = await lbApi.commentsForMarket({ mints, roles, limit: q("limit", "200") });
+      return json(res, Object.assign(out, { dev: COMMENT_DEV, asOf: Date.now() }));
+    } catch (e) { return json(res, { error: String(e.message || e) }, 500); }
+  }
+
+  // global trollbox (0.01-SOL messages, from Neon)
+  if (p === "/api/trollbox") {
+    if (!process.env.DATABASE_URL || !lbApi) return json(res, { error: "leaderboard db not configured" }, 503);
+    try {
+      const out = await lbApi.trollbox({ limit: q("limit", "100") });
+      return json(res, Object.assign(out, { dev: COMMENT_DEV, asOf: Date.now() }));
+    } catch (e) { return json(res, { error: String(e.message || e) }, 500); }
+  }
+
+  // trades tape — all markets, or one market when ?market= is passed
+  if (p === "/api/trades") {
+    if (!process.env.DATABASE_URL || !lbApi) return json(res, { error: "leaderboard db not configured" }, 503);
+    const marketQ = q("market", "");
+    let cfg = null;
+    if (marketQ) { await ensureRegistry(); const pr = regPair(marketQ); cfg = pr ? pr.config : marketQ; }
+    try { return json(res, await lbApi.recentTrades({ limit: q("limit", "60"), market: cfg })); }
+    catch (e) { return json(res, { error: String(e.message || e) }, 500); }
+  }
+
+  // leg-token price history (+ wallet fills) for the /trade chart
+  if (p === "/api/leg-price") {
+    if (!process.env.DATABASE_URL || !lbApi) return json(res, { error: "leaderboard db not configured" }, 503);
+    const market = q("market", ""), leg = q("leg", "long");
+    const pr = regPair(market);
+    const cfg = pr ? pr.config : market;
+    if (!cfg) return json(res, { error: "market required (config / receiptMint / sym)" }, 400);
+    try {
+      return json(res, await lbApi.legPrice({ market: cfg, leg, wallet: q("wallet", ""), limit: q("limit", "500"), tf: q("tf", "1d") }));
+    } catch (e) { return json(res, { error: String(e.message || e) }, 500); }
+  }
+
+  // /trade → the terminal app (Vercel subdomain)
+  if (p === "/trade" || p === "/trade/") {
+    res.writeHead(302, { location: "https://trade.magicalinternet.money" });
+    return res.end();
+  }
+
   // static (SPA fallback to index.html)
-  let file = p === "/" ? "/index.html" : p;
+  let file = p === "/" ? "/index.html" : (p === "/leaderboard" ? "/leaderboard.html" : p);
+  if (p === "/leaderboard" || p === "/leaderboard/") file = "/leaderboard.html";
   let full = path.join(PUBLIC, path.normalize(file).replace(/^(\.\.[/\\])+/, ""));
   fs.readFile(full, (err, data) => {
     if (err) {
@@ -1159,4 +1426,26 @@ refreshRegistryFromGpa().then(() => {
   if (REGISTRY.length) { POLLING = true; poll(); setInterval(poll, POLL_MS); }
 });
 setInterval(refreshRegistryFromGpa, GPA_MS);
+
+// Incremental leaderboard re-index. Off by default; set LB_INDEX=1 to run it in
+// this process (cheap once backfilled — walks only sigs newer than each cursor).
+// In production prefer a separate cron invoking `node leaderboard/indexer.js`.
+if (process.env.DATABASE_URL && lbIndexer && process.env.LB_INDEX === "1") {
+  const LB_MS = +(process.env.LB_INDEX_MS || 300000);        // full pass: ingest new fills + fold + balances
+  const PRICE_MS = +(process.env.LB_PRICE_MS || 60000);      // fast pass: reprice open positions to live price
+  const tick = () => lbIndexer.runOnce().catch((e) => console.error("lb index:", e.message));
+  const reprice = () => lbIndexer.repriceOnce().catch((e) => console.error("lb reprice:", e.message));
+  setTimeout(tick, 15000);
+  setInterval(tick, LB_MS);
+  setTimeout(reprice, 45000);
+  setInterval(reprice, PRICE_MS);
+}
+
+// Comments/trollbox ingest into Neon (runs whenever a DB is configured).
+if (process.env.DATABASE_URL && lbApi) {
+  setTimeout(scanCommentsToDb, 8000);
+  setInterval(scanCommentsToDb, +(process.env.COMMENT_SCAN_MS || 10000));
+  setTimeout(backfillComments, 20000); // one-time deep recover of aged-out comments
+}
+
 server.listen(PORT, () => console.log("magic internet money indexer on :" + PORT + " — rpc=" + RPC_URL.replace(/\?.*/, "") + " program=" + PROGRAM_ID + " deployed=? pairs=gpa"));

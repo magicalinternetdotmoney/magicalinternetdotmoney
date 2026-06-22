@@ -14,7 +14,12 @@
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   var POOL_FEE_LAMPORTS = 150000000n; // Raydium CPMM create-pool fee (0.15 SOL each)
   var POOL_RENT_LAMPORTS = 45000000n; // LP mint + vaults + observation + pool state (per pool)
-  var SETUP_RENT_LAMPORTS = 95000000n; // mints, receipt T22+metadata, LUT, config, ATAs, hook metas (incl. oracle)
+  var SETUP_RENT_LAMPORTS = 115000000n; // mints, receipt T22+metadata, LUT, config, price_crawl, hook metas
+  var ORACLE_CRAWL = 2;
+  var LAYOUT_CPSWAP = 1;
+  var CRAWL_HOOK_META_COUNT = 14;
+  var CRAWL_HOOK_PATCH_EMBED_COUNT = 12;
+  var PRICE_CRAWL_SIZE = 519;
   var TX_FEE_LAMPORTS = 5000000n; // priority + signatures across the launch batch
 
   var SOL_GUARD_BUFFER = 10000000n; // 0.01 SOL headroom so the 3rd pool fee doesn't clip
@@ -208,8 +213,9 @@
     var ataA = ata(A.publicKey, me, TOK), ataB = ata(B.publicKey, me, TOK);
     var D1 = Keypair.generate().publicKey, D2 = Keypair.generate().publicKey, D3 = Keypair.generate().publicKey;
     var hasPumpOracle = !!(params.oraclePool && params.oracleBaseVault && params.oracleQuoteVault);
+    var useCrawlOracle = params.oracleKind === ORACLE_CRAWL || (!hasPumpOracle && params.useCrawlOracle !== false);
     var oraclePool = hasPumpOracle ? new PublicKey(params.oraclePool) : PublicKey.default;
-    var oracleKind = hasPumpOracle ? 1 : 0;
+    var oracleKind = hasPumpOracle ? 1 : (useCrawlOracle ? ORACLE_CRAWL : 0);
     var initOracleWad = hasPumpOracle && params.initOraclePriceWad ? BigInt(params.initOraclePriceWad) : 0n;
     var initConfigData = Buffer.concat([
       Buffer.from([1, authBump, cfgBump]), u64(20000n), u64(BigInt(lev) * 10000n), u64(2000n), u64(5000n), u128(ONE), u64(cLam),
@@ -234,6 +240,77 @@
       memePools = { am: am.pool, bm: bm.pool };
     }
     defs.push({ label: "hand minting to the program", ixs: [spl.createSetAuthorityInstruction(A.publicKey, me, spl.AuthorityType.MintTokens, authority, [], TOK), spl.createSetAuthorityInstruction(B.publicKey, me, spl.AuthorityType.MintTokens, authority, [], TOK), spl.createSetAuthorityInstruction(R.publicKey, me, spl.AuthorityType.MintTokens, authority, [], T22)], signers: [] });
+
+    var priceCrawlPair = PublicKey.findProgramAddressSync([Buffer.from("price_crawl"), cfgPda.toBuffer()], PROGRAM);
+    var priceCrawl = priceCrawlPair[0], priceCrawlBump = priceCrawlPair[1];
+    var rootLut = null;
+    if (oracleKind === ORACLE_CRAWL) {
+      var ALT_PROG = new PublicKey("AddressLookupTab1e1111111111111111111111111");
+      var lutSlot = BigInt(slot - 1);
+      var lutSlotBuf = u64(lutSlot);
+      var rootLutPair = PublicKey.findProgramAddressSync([authority.toBuffer(), lutSlotBuf], ALT_PROG);
+      rootLut = rootLutPair[0];
+      var lutBump = rootLutPair[1];
+      var crawlVenues = params.crawlVenues || [];
+      var priceBasePk = params.underlyingMint ? new PublicKey(params.underlyingMint) : A.publicKey;
+      var quoteAltPk = new PublicKey(params.wsolMint || "So11111111111111111111111111111111111111112");
+      var crawlN = Math.max(1, crawlVenues.length);
+      var crawlRent = BigInt(await conn.getMinimumBalanceForRentExemption(PRICE_CRAWL_SIZE));
+      var crawlLayouts = Buffer.alloc(12);
+      for (var cvi = 0; cvi < crawlN; cvi++) crawlLayouts[cvi] = (crawlVenues[cvi] && crawlVenues[cvi].layout) || LAYOUT_CPSWAP;
+      var crawlSetupIxs = [
+        CB.setComputeUnitLimit({ units: 500000 }),
+        new TI({
+          programId: PROGRAM,
+          keys: [k(me, true, true), k(cfgPda, true), k(authority, false), k(rootLut, true), k(ALT_PROG, false), k(SystemProgram.programId, true)],
+          data: Buffer.concat([Buffer.from([8]), lutSlotBuf, Buffer.from([lutBump])]),
+        }),
+      ];
+      if (crawlVenues.length) {
+        for (var cve = 0; cve < crawlVenues.length; cve++) {
+          crawlSetupIxs.push(new TI({
+            programId: PROGRAM,
+            keys: [k(me, true, true), k(cfgPda, false), k(authority, false), k(rootLut, true), k(ALT_PROG, false), k(SystemProgram.programId, true)],
+            data: Buffer.concat([Buffer.from([9]), new PublicKey(crawlVenues[cve].pool).toBuffer()]),
+          }));
+        }
+      } else {
+        crawlSetupIxs.push(new TI({
+          programId: PROGRAM,
+          keys: [k(me, true, true), k(cfgPda, false), k(authority, false), k(rootLut, true), k(ALT_PROG, false), k(SystemProgram.programId, true)],
+          data: Buffer.concat([Buffer.from([9]), inits[1].pool.toBuffer()]),
+        }));
+      }
+      crawlSetupIxs.push(new TI({
+        programId: PROGRAM,
+        keys: [k(me, true, true), k(cfgPda, false), k(priceCrawl, true), k(SystemProgram.programId, true)],
+        data: Buffer.concat([
+          Buffer.from([15, priceCrawlBump, crawlN]), crawlLayouts, u128(0n), u64(crawlRent),
+          priceBasePk.toBuffer(), quoteAltPk.toBuffer(),
+        ]),
+      }));
+      defs.push({ label: "price crawl setup", ixs: crawlSetupIxs, signers: [] });
+      var seedVenue = crawlVenues[0] || null;
+      var seedPool = seedVenue ? new PublicKey(seedVenue.pool) : inits[1].pool;
+      var seedBv = seedVenue && seedVenue.baseVault ? new PublicKey(seedVenue.baseVault) : vaultOf(seedPool, priceBasePk);
+      var seedQv = seedVenue && seedVenue.quoteVault ? new PublicKey(seedVenue.quoteVault) : vaultOf(seedPool, U);
+      defs.push({
+        label: "seed crawl oracle",
+        ixs: [
+          CB.setComputeUnitLimit({ units: 250000 }),
+          new TI({
+            programId: PROGRAM,
+            keys: [
+              k(priceCrawl, true), k(cfgPda, false), k(rootLut, false),
+              k(seedPool, false), k(seedBv, false), k(seedQv, false),
+            ],
+            data: Buffer.concat([Buffer.from([16]), u64(BigInt(slot))]),
+          }),
+        ],
+        signers: [],
+      });
+    }
+
     var metaPair = PublicKey.findProgramAddressSync([Buffer.from("extra-account-metas"), R.publicKey.toBuffer()], PROGRAM);
     var hookMetaList = metaPair[0], hookMetaBump = metaPair[1];
     var hookEmbeds = [cfgPda, authority, A.publicKey, B.publicKey,
@@ -246,13 +323,18 @@
         new PublicKey(params.oracleBaseVault),
         new PublicKey(params.oracleQuoteVault),
       ]);
+    } else if (oracleKind === ORACLE_CRAWL) {
+      hookEmbeds.push(priceCrawl);
     }
-    var hookCount = hookEmbeds.length;
-    if (hookCount < 11 || hookCount > 16) throw new Error("invalid hook embed count: " + hookCount);
+    var hookCount = oracleKind === ORACLE_CRAWL ? CRAWL_HOOK_META_COUNT : hookEmbeds.length;
+    if (oracleKind === ORACLE_CRAWL && hookEmbeds.length !== CRAWL_HOOK_PATCH_EMBED_COUNT) {
+      throw new Error("invalid crawl hook embed count: " + hookEmbeds.length);
+    }
+    if (hookCount < 11 || hookCount > 16) throw new Error("invalid hook meta count: " + hookCount);
     var hookMetaRent = BigInt(await conn.getMinimumBalanceForRentExemption(16 + hookCount * 35));
     var hookMask = 0;
     for (var hi = 0; hi < hookCount; hi++) {
-      if (hi === 0 || hi === 2 || hi === 3 || (hi >= 4 && hi <= 9)) hookMask |= (1 << hi);
+      if (hi === 0 || hi === 2 || hi === 3 || (hi >= 4 && hi <= 9) || hi === 11) hookMask |= (1 << hi);
     }
     var initHookIx = new TI({ programId: PROGRAM,
       keys: [k(me, true, true), k(hookMetaList, true), k(R.publicKey, false), k(SystemProgram.programId, false)]
@@ -283,9 +365,26 @@
       } catch (e) { return false; }
     }
 
+    async function crawlReady() {
+      try {
+        var ai = await conn.getAccountInfo(priceCrawl, "confirmed");
+        return !!(ai && ai.owner && ai.owner.equals(PROGRAM) && ai.data.length >= 43 && ai.data[42] > 0);
+      } catch (e) { return false; }
+    }
+    async function crawlSeeded() {
+      try {
+        var ai = await conn.getAccountInfo(priceCrawl, "confirmed");
+        if (!ai || !ai.owner || !ai.owner.equals(PROGRAM) || ai.data.length < 42) return false;
+        var pass = ai.data.readBigUInt64LE(34);
+        return pass > 0n;
+      } catch (e) { return false; }
+    }
+
     async function stepAlreadyDone(d) {
       if (d.label === "create MINTA + MINTB") return (await mintExists(A.publicKey, TOK)) && (await mintExists(B.publicKey, TOK));
       if (d.label === "create receipt (T22 + hook + metadata)") return receiptReady();
+      if (d.label === "price crawl setup") return crawlReady();
+      if (d.label === "seed crawl oracle") return crawlSeeded();
       if (d.label === "init transfer-hook extras") return hookMetaReady(R.publicKey);
       return false;
     }
@@ -379,7 +478,8 @@
     // build the registry entry + persist
     var pair = { sym: params.sym, name: params.name, receiptMint: R.publicKey.toBase58(), config: cfgPda.toBase58(),
       theme: params.theme || { a: "#2fe6c0", b: "#a06bff" }, quote: "USDC", quoteMint: U.toBase58(),
-      underlyingMint: params.underlyingMint || null,
+      underlyingMint: params.underlyingMint || null, oracleKind: oracleKind,
+      priceCrawl: oracleKind === ORACLE_CRAWL ? priceCrawl.toBase58() : null,
       mintA: A.publicKey.toBase58(), mintB: B.publicKey.toBase58(), tradeFeeBps: 25, memeMint: MEME ? MEME.toBase58() : null,
       pools: {
         ab: { pool: inits[0].pool.toBase58(), vaultA: vaultOf(inits[0].pool, A.publicKey).toBase58(), vaultB: vaultOf(inits[0].pool, B.publicKey).toBase58() },

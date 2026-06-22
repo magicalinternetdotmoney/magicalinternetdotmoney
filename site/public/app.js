@@ -46,6 +46,12 @@
       route.view = "provide";
       try { route.pairId = decodeURIComponent(path.slice(6)); } catch (x) { route.pairId = path.slice(6); }
     }
+    // prefill the create flow from the /trade terminal's "create market" deep-link
+    if (route.view === "create") {
+      if (q.get("lev")) route.prefillLev = Math.max(2, Math.min(10, parseInt(q.get("lev"), 10) || 0));
+      if (q.get("underlying")) route.prefillUnderlying = q.get("underlying");
+      if (q.get("sym")) route.prefillSym = q.get("sym");
+    }
     var tab = q.get("tab");
     if (tab === "charts" || tab === "trade") route.pTab = tab;
     var tf = q.get("tf");
@@ -79,7 +85,20 @@
   }
   function applyRoute(route) {
     S.view = route.view;
-    if (route.view === "create") S.cStep = route.cStep;
+    if (route.view === "create") {
+      S.cStep = route.cStep;
+      // prefill from the terminal's deep-link: leverage band, headline, + asset CA
+      if (route.prefillLev) S.levMax = route.prefillLev;
+      if (route.prefillSym) {
+        S.fact = (route.prefillLev ? route.prefillLev + "x " : "") + route.prefillSym;
+        if (!S.recSym || S.recSym === "TRI") S.recSym = String(route.prefillSym).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 7) || "TRI";
+        if (!S.recName || S.recName === "Triad Receipt") S.recName = S.fact + " Receipt";
+      }
+      if (route.prefillUnderlying && route.prefillUnderlying !== S.sideA) {
+        S.sideA = route.prefillUnderlying;
+        if (typeof A !== "undefined" && A && A._lookup) A._lookup("A", S.sideA);
+      }
+    }
     if (route.view === "home") {
       S.exploreQ = route.exploreQ;
       S.exploreSort = route.exploreSort;
@@ -247,8 +266,19 @@
   function caLink() {
     return extLink(CA_URL, FOOT_LINK_STYLE, "ca");
   }
+  var TRADE_URL = "https://trade.magicalinternet.money";
+  var TRADE_NAV_STYLE = "display:flex; align-items:center; justify-content:center; gap:6px; padding:8px 14px; border-radius:999px; border:1px solid rgba(47,230,192,0.38); background:linear-gradient(100deg,rgba(47,230,192,0.14),rgba(122,217,255,0.1)); color:#2fe6c0; font-size:12px; font-weight:600; text-decoration:none; white-space:nowrap; flex:none; box-shadow:0 0 18px -6px rgba(47,230,192,0.35);";
+  function tradeLink() {
+    return '<a href="' + esc(TRADE_URL) + '" style="' + TRADE_NAV_STYLE + '">Trade</a>';
+  }
+  var LB_URL = "/leaderboard";
+  var LB_NAV_STYLE = "display:flex; align-items:center; justify-content:center; gap:6px; padding:8px 14px; border-radius:999px; border:1px solid rgba(242,193,78,0.38); background:linear-gradient(100deg,rgba(242,193,78,0.16),rgba(160,107,255,0.12)); color:#f2c14e; font-size:12px; font-weight:600; text-decoration:none; white-space:nowrap; flex:none; box-shadow:0 0 18px -6px rgba(242,193,78,0.45);";
+  var LB_CARD_STYLE = "display:flex; align-items:center; justify-content:center; width:100%; padding:13px 16px; border-radius:12px; border:1px solid rgba(242,193,78,0.32); background:linear-gradient(100deg,rgba(242,193,78,0.1),rgba(160,107,255,0.08)); color:#f2c14e; font-size:14px; font-weight:600; text-decoration:none;";
+  function leaderboardLink(nav) {
+    return extLink(LB_URL, nav ? LB_NAV_STYLE : LB_CARD_STYLE, nav ? "Leaderboard" : "Leaderboard — long / short / LP P&L ↗");
+  }
   function siteFoot() {
-    return '<div style="text-align:center; padding:20px 0 4px; font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#54546a;">' + xLink(false) + " · " + extLink(GITHUB_URL, FOOT_LINK_STYLE, "github") + " · " + caLink() + " · unaudited · experimental</div>";
+    return '<div style="text-align:center; padding:20px 0 4px; font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#54546a;">' + extLink(LB_URL, FOOT_LINK_STYLE, "leaderboard") + " · " + xLink(false) + " · " + extLink(GITHUB_URL, FOOT_LINK_STYLE, "github") + " · " + caLink() + " · unaudited · experimental</div>";
   }
   function jupSwapUrl(buyMint) {
     return "https://jup.ag/swap?sell=" + encodeURIComponent(WSOL_MINT) + "&buy=" + encodeURIComponent(buyMint);
@@ -257,13 +287,57 @@
     var m = (sym || "").match(/^(\d+)x/i);
     return m ? parseInt(m[1], 10) : levMax;
   }
+  function legLev(levMax) {
+    return levMax != null && levMax > 0 ? Math.round(levMax) : 5;
+  }
+  function parseBrandLev(sym, name) {
+    var m = ((sym || "") + " " + (name || "")).match(/(\d+)\s*x/i);
+    return m ? parseInt(m[1], 10) : null;
+  }
+  function levBandCtx(ctx) {
+    ctx = ctx || {};
+    var max = legLev(ctx.levMax);
+    var brand = parseBrandLev(ctx.sym, ctx.name);
+    var min = ctx.levBandMin != null ? Math.round(ctx.levBandMin)
+      : (brand != null && brand < max ? brand
+        : (ctx.levMin != null && ctx.levMin > 0 ? Math.round(ctx.levMin) : 2));
+    if (min >= max) min = max;
+    return { min: min, max: max, label: min < max ? (min + "–" + max + "×") : (max + "×") };
+  }
+  function legLevPrefix(ctx, sign) {
+    var b = levBandCtx(ctx), s = sign || "+";
+    return b.min < b.max ? (s + b.min + "–" + b.max) : (s + b.max);
+  }
   function deployed() { return true; }
+  function aprNoteShort(note) {
+    if (!note) return "—";
+    if (note.indexOf("flat") >= 0) return "0% · flat NAV";
+    if (note.indexOf("6h") >= 0) return "apy pending";
+    if (note.indexOf("\u22652") >= 0 || note.indexOf(">=2") >= 0) return "indexing…";
+    if (note.indexOf("seed only") >= 0) return "seed only";
+    return note.length > 24 ? note.slice(0, 22) + "…" : note;
+  }
   function aprLabel(p) {
-    if (!p) return "no data yet";
-    if (p.apr != null && Math.abs(p.apr) >= 0.05) return p.apr.toFixed(1) + "% APR";
-    if (p.nav != null) return "APY building…";
-    if (p.tvl != null) return "seed only";
-    return "no data yet";
+    if (!p) return { text: "no data yet", neg: false, muted: true };
+    if (p.apr != null && isFinite(p.apr) && Math.abs(p.apr) >= 0.05) {
+      return { text: p.apr.toFixed(1) + "% APR", neg: p.apr < 0, muted: false };
+    }
+    if (p.aprNote) return { text: aprNoteShort(p.aprNote), neg: false, muted: true };
+    if (p.nav != null) return { text: "0% · flat NAV", neg: false, muted: true };
+    if (p.tvl != null) return { text: "seed only", neg: false, muted: true };
+    return { text: "no data yet", neg: false, muted: true };
+  }
+  function aprColor(lbl) {
+    if (!lbl || lbl.muted) return "#7e7e97";
+    return lbl.neg ? "#ff5470" : "#2fe6c0";
+  }
+  function apyHead(apyObj, pair) {
+    var val = apyObj && apyObj.total;
+    if (val != null && isFinite(val) && Math.abs(val) >= 0.05) {
+      return { main: val.toFixed(1) + "%", sub: "EST APY · USD-eq", color: val < 0 ? "#ff5470" : "#2fe6c0", foot: "observed from on-chain nav growth — not an assumed rate." };
+    }
+    var note = (apyObj && apyObj.note) || (pair && pair.aprNote) || null;
+    return { main: "0%", sub: "EST APY · USD-eq", color: "#7e7e97", foot: note ? aprNoteShort(note) + " — observed from on-chain NAV, not a projected rate." : "NAV flat — yield shows once receipt price grows from swap fees and arb volume." };
   }
   function navOf(pk) {
     var s = DATA.series[pk + "|" + S.tf];
@@ -447,6 +521,9 @@
     api("/api/tokenbalance?owner=" + S.pubkey + "&mint=" + MEME_MINT_ADDR).then(function (d) {
       if (d && !d.error) { S.memeBal = d.uiAmount; render(); }
     });
+    if (S.memeUsd == null) api("/api/underlying?ca=" + MEME_MINT_ADDR).then(function (d) {
+      if (d && d.priceUsd != null) { S.memeUsd = d.priceUsd; S.memeSym = d.symbol || "MEME"; render(); }
+    });
     if (S.view === "provide" && S.activePair) A._reloadReceipt();
   }
   function startBalPoll() {
@@ -597,8 +674,8 @@
       var solGuard = launchSolGuardMsg();
       if (solGuard) { S.note = solGuard; render(); return; }
       var memeWhole = Math.min(S.memeAmt, S.memeBal != null ? Math.floor(S.memeBal / 2) : S.memeAmt);
-      // On-chain PumpSwap oracle is wired only when the auto-lookup resolved a PumpSwap pool
-      // (Raydium USDC pools use triangle-only rebalancing — no oracle fields needed).
+      // PumpSwap anchor → legacy pumpswap oracle (14 literal hook metas).
+      // Raydium USDC anchor → price crawl (12 embeds, 14 boxed hook metas, no external oracle).
       var pumpPool = a.pool && a.pool.type === "pumpswap" && a.pool.id && a.pool.baseVault && a.pool.quoteVault;
       var oracleWad = a.priceUsd ? BigInt(Math.max(1, Math.round(a.priceUsd * 1e9))) : 0n;
       var params = {
@@ -606,14 +683,22 @@
         assetUsd: a.priceUsd, seedUsdc: seedUsdc, lev: S.levMax, quoteMint: USDC_MINT,
         memeMint: MEME_MINT_ADDR, memePerPool: (BigInt(Math.round(memeWhole)) * 1000000n).toString(),
         underlyingMint: S.sideA, underlyingSymbol: S.sideAInfo.symbol, theme: THEMES[S.themeIdx],
+        useCrawlOracle: !pumpPool,
         oraclePool: pumpPool ? a.pool.id : null,
         initOraclePriceWad: pumpPool ? oracleWad.toString() : "0",
         oracleBaseVault: pumpPool ? a.pool.baseVault : null,
         oracleQuoteVault: pumpPool ? a.pool.quoteVault : null,
       };
-      S.busy = "launch"; S.note = "launching " + S.recSym + "…"; render();
-      window.MIMLaunch(params, S.walletRef, function (msg) { S.note = msg; render(); })
-        .then(function (pair) {
+      S.busy = "launch"; S.note = "discovering AMM venues…"; render();
+      api("/api/crawl-venues?baseMint=" + encodeURIComponent(S.sideA)).then(function (crawl) {
+        if (crawl && crawl.venues) {
+          params.underlyingMint = S.sideA;
+          params.crawlVenues = crawl.venues;
+          params.wsolMint = WSOL_MINT;
+        }
+        S.note = "launching " + S.recSym + " (" + ((crawl && crawl.venues && crawl.venues.length) || 0) + " crawl venues)…"; render();
+        return window.MIMLaunch(params, S.walletRef, function (msg) { S.note = msg; render(); });
+      }).then(function (pair) {
           if (S.sideAInfo) { pair.underlyingMint = S.sideA; pair.underlyingLogo = S.sideAInfo.logo; pair.underlyingSymbol = S.sideAInfo.symbol; }
           S.busy = null; S.note = "🎉 " + pair.sym + " launched — 5 AMMs live!"; DATA.pairs = null; A.openPairBy(pair);
         })
@@ -653,7 +738,7 @@
     var hov = S.hoverF, H = { hoverOn: false };
     if (hov != null) {
       var hi = Math.max(0, Math.min(n - 1, Math.round(hov * (n - 1)))), pt = pts[hi];
-      H = { hoverOn: true, hoverPct: ((hi / (n - 1)) * 100).toFixed(2) + "%", hovMint: "$" + pt.mint.toFixed(4), hovRedeem: "$" + pt.redeem.toFixed(4), hovLabel: lbl(n - 1 - hi), crossX: xc(hi).toFixed(1), cyMint: yA(pt.mint).toFixed(1), cyRedeem: yA(pt.redeem).toFixed(1) };
+      H = { hoverOn: true, hoverPct: ((hi / (n - 1)) * 100).toFixed(2) + "%", hovMint: "$" + (pt.mint == null ? "—" : pt.mint.toFixed(4)), hovRedeem: "$" + (pt.redeem == null ? "—" : pt.redeem.toFixed(4)), hovLabel: lbl(n - 1 - hi), crossX: xc(hi).toFixed(1), cyMint: yA(pt.mint).toFixed(1), cyRedeem: yA(pt.redeem).toFixed(1) };
     }
     return {
       last: last, chgN: chgN, xStart: lbl(n - 1),
@@ -679,11 +764,13 @@
     var minus = contracts.find(function (c) { return c.leg === "inverse"; });
     var p = pk && S.activePair && pairKey(S.activePair) === pk ? S.activePair : null;
     var dispSym = (p && pairSymLabel(p)) || pk;
-    var lev = synthLev(dispSym, p && p.levMax);
     var u = (p && p.underlyingSymbol) || (dispSym ? dispSym.replace(/^\d+x/i, "") : "") || "asset";
+    var band = levBandCtx(p || { sym: dispSym });
+    var plusPre = legLevPrefix(p || { sym: dispSym }, "+");
+    var minusPre = legLevPrefix(p || { sym: dispSym }, "-");
     return {
-      plusSym: (plus && plus.symbol) || ("+" + lev + "x" + u),
-      minusSym: (minus && minus.symbol) || ("-" + lev + "x" + u),
+      plusSym: (plus && plus.symbol) || (plusPre + "x" + u),
+      minusSym: (minus && minus.symbol) || (minusPre + "x" + u),
       plusMint: (plus && plus.addr) || (p && p.mintA) || null,
       minusMint: (minus && minus.addr) || (p && p.mintB) || null,
     };
@@ -728,10 +815,10 @@
     var html = '<div style="position:relative; min-height:100vh; width:100%; background:radial-gradient(120% 80% at 50% -10%, #14122a 0%, #0a0a14 44%, #07070b 100%); overflow-x:hidden;">' + BG;
 
     // NAV
-    html += '<div style="position:relative; z-index:20; width:100%; display:flex; justify-content:center; padding:18px clamp(14px,3vw,32px) 0;"><div style="width:100%; max-width:620px; display:flex; align-items:center; justify-content:space-between; gap:12px;"><div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">';
+    html += '<div style="position:relative; z-index:20; width:100%; display:flex; justify-content:center; padding:18px clamp(14px,3vw,32px) 0;"><div style="width:100%; max-width:720px; display:flex; align-items:center; justify-content:space-between; gap:10px;"><div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">';
     if (S.connected && S.view !== "home") html += btn("goHome", null, "width:32px; height:32px; flex:none; border-radius:10px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.03); color:#cfcfe0; font-size:16px; cursor:pointer;", "&larr;");
     html += LOGO + '<span style="font-weight:600; font-size:15px; letter-spacing:-0.01em; color:#f4f4fb; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;">Magical Internet Money</span></div>';
-    html += '<div style="display:flex; align-items:center; gap:8px; flex:none;">' + xLink(true);
+    html += '<div style="display:flex; align-items:center; gap:8px; flex:none;">' + tradeLink() + leaderboardLink(true) + xLink(true);
     if (S.connected) html += btn("disconnect", null, "display:flex; align-items:center; gap:7px; padding:8px 12px; border:1px solid rgba(255,255,255,0.1); border-radius:999px; background:rgba(255,255,255,0.03); font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#cfcfe0; cursor:pointer; white-space:nowrap; flex:none;", '<span style="width:6px;height:6px;border-radius:50%;background:#2fe6c0;box-shadow:0 0 8px #2fe6c0;animation:mim-dot 1.8s ease-in-out infinite;"></span>' + esc(S.addr || ""));
     html += "</div></div></div>";
 
@@ -746,12 +833,45 @@
     return html;
   }
 
+  function whoCard(accent, tag, head, body, foot) {
+    return '<div style="flex:1 1 280px; min-width:260px; border-radius:18px; padding:22px 20px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); display:flex; flex-direction:column; gap:11px; text-align:left;">' +
+      '<div style="font-family:\'IBM Plex Mono\',monospace; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:' + accent + ';">' + esc(tag) + '</div>' +
+      '<div style="font-size:17px; font-weight:700; color:#f4f4fb; line-height:1.3;">' + head + '</div>' +
+      '<div style="font-size:13px; color:#9494ad; line-height:1.6;">' + body + '</div>' +
+      '<div style="margin-top:auto; padding-top:6px; font-family:\'IBM Plex Mono\',monospace; font-size:11px; color:' + accent + ';">' + foot + '</div>' +
+    '</div>';
+  }
+  function whoForSection() {
+    return '<div style="position:relative; z-index:10; max-width:1080px; margin:0 auto; padding:28px clamp(16px,4vw,40px) 4px;">' +
+      '<div style="text-align:center; margin-bottom:8px;"><div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; letter-spacing:0.18em; text-transform:uppercase; color:#7e7e97;">four ways in · one triangle</div>' +
+      '<h2 style="margin:8px 0 0; font-size:clamp(22px,4vw,30px); font-weight:700; letter-spacing:-0.03em; color:#f4f4fb;">Who\'s this for</h2>' +
+      '<p style="max-width:560px; margin:10px auto 26px; font-size:13.5px; line-height:1.6; color:#7e7e97;">Four crowds hit the same triangle from different apps — directional or market-neutral — and meet on one scoreboard.</p></div>' +
+      '<div style="display:flex; gap:16px; flex-wrap:wrap; align-items:stretch;">' +
+        whoCard("#2fe6c0", "the believer · LP the receipt",
+          "Deposit USDC, hold the receipt, be long the whole engine.",
+          "You don’t pick a side. One deposit seeds all three pools and mints you the receipt LP — you own both the <b style=\"color:#cfcfe0;\">+leg</b> and the <b style=\"color:#cfcfe0;\">−leg</b>, plus the fees and the NAV drift the “mint-the-loser” crank produces.",
+          "deposit on magicalinternet.money →") +
+        whoCard("#a06bff", "the degen · long / short from Jupiter",
+          "Type “buy 5xSOL” in Jupiter. No perp, no funding, no liq price.",
+          "The <b style=\"color:#cfcfe0;\">+5x</b> and <b style=\"color:#cfcfe0;\">−5x</b> legs are just SPL tokens with a live Raydium price. Buy one and you <i>are</i> the position — settles like spot, moves leveraged. Your fill becomes your avg entry on the board.",
+          "swap the leg on Jupiter →") +
+        whoCard("#f2c14e", "the mercenary · single-leg Raydium LP",
+          "Add liquidity to one leg’s pool only — farm a different IL profile.",
+          "Ape straight into the <b style=\"color:#cfcfe0;\">−leg / USDC</b> pool on Raydium and skip the rest. You’re pairing USDC against a directionally-biased synthetic — short-with-a-yield instead of 50/50 exposed to a pair that can rip.",
+          "add liq on Raydium →") +
+        whoCard("#7ad9ff", "the neutralist · LP the +leg/−leg pool",
+          "LP the long/short pool itself — market-neutral, almost no IL.",
+          "Add liquidity to the <b style=\"color:#cfcfe0;\">+leg / −leg</b> pool, not a USDC pair. The two legs move inversely, so your bag stays roughly flat as the underlying rips either way — the directional whipsaw that drives impermanent loss cancels out. What you’re really short is the structural <b style=\"color:#cfcfe0;\">decay</b> both leveraged legs bleed over time. You land under LP on the +/− pool.",
+          "LP the +/− pool on Raydium →") +
+      '</div></div>';
+  }
   function connectView() {
-    return '<div style="position:relative; z-index:10; min-height:calc(100vh - 80px); display:flex; align-items:center; justify-content:center; padding:32px clamp(16px,4vw,40px) 60px;"><div style="width:100%; max-width:460px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:26px;">' +
+    return whoForSection() + '<div style="position:relative; z-index:10; display:flex; align-items:flex-start; justify-content:center; padding:8px clamp(16px,4vw,40px) 60px;"><div style="width:100%; max-width:460px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:26px;">' +
       '<div style="position:relative; width:140px; height:140px; display:flex; align-items:center; justify-content:center; animation:mim-rise .7s ease both;"><svg width="140" height="140" viewBox="0 0 160 160" style="position:absolute; inset:0; animation:mim-spin 26s linear infinite;"><circle cx="80" cy="80" r="70" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1" stroke-dasharray="2 7"/></svg><svg width="96" height="92" viewBox="0 0 96 92" fill="none" style="filter:drop-shadow(0 0 16px rgba(160,107,255,0.45));"><path d="M48 8 L88 80 L8 80 Z" stroke="url(#sg)" stroke-width="2.5" stroke-linejoin="round" fill="rgba(160,107,255,0.05)"/><circle cx="48" cy="8" r="6.5" fill="#2fe6c0"/><circle cx="88" cy="80" r="6.5" fill="#a06bff"/><circle cx="8" cy="80" r="6.5" fill="#f2c14e"/><defs><linearGradient id="sg" x1="0" y1="0" x2="96" y2="92"><stop offset="0" stop-color="#2fe6c0"/><stop offset="1" stop-color="#a06bff"/></linearGradient></defs></svg></div>' +
       '<div style="animation:mim-rise .7s ease .08s both;"><h1 style="margin:0; font-size:clamp(36px,8vw,52px); line-height:1.0; font-weight:700; letter-spacing:-0.025em; color:#f4f4fb;">Magical Internet<br>Money</h1><p style="margin:18px auto 0; max-width:390px; font-size:16px; line-height:1.55; color:#9494ad;">mainnet alpha — launch a pair via <span style="color:#cfcfe0;">~10 wallet txs</span> (Raydium triangle + receipt), or deposit USDC for receipt LPs. <span style="color:#7e7e97; font-size:13px;">Unaudited · verify on-chain.</span></p></div>' +
       '<div style="width:100%; max-width:340px; display:flex; flex-direction:column; gap:12px; animation:mim-rise .7s ease .16s both;">' + btn("openWallet", null, "width:100%; padding:17px; border:none; border-radius:14px; font-size:16px; font-weight:600; color:#07070b; background:linear-gradient(100deg,#2fe6c0,#7ad9ff 35%,#a06bff); background-size:220% auto; box-shadow:0 12px 34px -10px rgba(122,150,255,0.6); cursor:pointer; animation:mim-shimmer 4s linear infinite;", "Connect Wallet") +
-      '<div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#54546a; letter-spacing:0.03em;">' + xLink(false) + " · " + extLink(GITHUB_URL, FOOT_LINK_STYLE, "github") + " · " + caLink() + " · unaudited · experimental · here be dragons</div></div></div></div>";
+      leaderboardLink(false) +
+      '<div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#54546a; letter-spacing:0.03em;">' + extLink(LB_URL, FOOT_LINK_STYLE, "leaderboard") + " · " + xLink(false) + " · " + extLink(GITHUB_URL, FOOT_LINK_STYLE, "github") + " · " + caLink() + " · unaudited · experimental · here be dragons</div></div></div></div>";
   }
 
   function statCard(label, val, accent) {
@@ -763,17 +883,18 @@
     var loaded = pairs != null;
     pairs = pairs || [];
     var tvlSum = pairs.reduce(function (m, p) { return m + (p.tvl || 0); }, 0);
-    var aprs = pairs.map(function (p) { return p.apr; }).filter(function (x) { return x != null && Math.abs(x) >= 0.05; });
+    var aprs = pairs.map(function (p) { return p.apr; }).filter(function (x) { return x != null && x >= 0.05; });
     var top = aprs.length ? Math.max.apply(null, aprs) : null;
     var sortChips = [["tvl", "TVL"], ["apr", "APR"], ["sym", "Symbol"], ["name", "Name"]].map(function (c) {
       var on = S.exploreSort === c[0];
       return btn("setExploreSort", c[0], "padding:5px 10px; border-radius:8px; cursor:pointer; font-family:'IBM Plex Mono',monospace; font-size:10px; border:1px solid " + (on ? "#a06bff" : "rgba(255,255,255,0.1)") + "; background:" + (on ? "rgba(160,107,255,0.14)" : "rgba(255,255,255,0.02)") + "; color:" + (on ? "#cdbcff" : "#9494ad") + ";", c[1]);
     }).join("");
     var pairRows = pairs.map(function (p, i) {
+      var apr = aprLabel(p);
       return btn("openPair", i, "display:flex; align-items:center; gap:12px; padding:11px 10px; border:none; border-radius:12px; background:none; cursor:pointer; text-align:left; width:100%;",
         pairIcon(p, 28) +
         '<span style="flex:1; min-width:0;"><span style="display:block; font-size:14px; font-weight:600; color:#eaeaf2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + esc(p.name) + '</span><span style="font-family:\'IBM Plex Mono\',monospace; font-size:11px; color:#7e7e97;">' + esc(pairSymLabel(p)) + (p.underlyingSymbol && !p.symCollides ? " · " + esc(p.underlyingSymbol) : "") + '</span></span>' +
-        '<span style="flex:none; text-align:right;"><span style="display:block; font-family:\'IBM Plex Mono\',monospace; font-size:13px; color:#f4f4fb;">' + fmtUsd(p.tvl) + '</span><span style="font-family:\'IBM Plex Mono\',monospace; font-size:11px; color:#2fe6c0;">' + esc(aprLabel(p)) + "</span></span>");
+        '<span style="flex:none; text-align:right;"><span style="display:block; font-family:\'IBM Plex Mono\',monospace; font-size:13px; color:#f4f4fb;">' + fmtUsd(p.tvl) + '</span><span style="font-family:\'IBM Plex Mono\',monospace; font-size:11px; color:' + aprColor(apr) + ';">' + esc(apr.text) + "</span></span>");
     }).join("");
     var emptyMsg = S.exploreQ ? "No pairs match your search." : (deployed() ? "No pairs on-chain yet — be the first to launch." : "The mainnet program isn’t deployed yet.");
     var emptyPairs = '<div style="padding:22px 10px; text-align:center;"><div style="font-size:13px; color:#9494ad;">' + emptyMsg + '</div><div style="font-size:12px; color:#54546a; margin-top:6px; line-height:1.5;">Markets are discovered via getProgramAccounts — no manual registry needed.</div></div>';
@@ -816,11 +937,13 @@
     if (S.cStep === 1) {
       var uLogo = S.sideAInfo && S.sideAInfo.logo;
       var qLogo = (S.sideBInfo && S.sideBInfo.logo) || (S.sideB === USDC_MINT ? USDC_LOGO : null);
-      var lev = synthLev(S.recSym, S.levMax), u = (S.sideAInfo && S.sideAInfo.symbol) || "asset";
+      var u = (S.sideAInfo && S.sideAInfo.symbol) || "asset";
+      var plusPre = legLevPrefix({ sym: S.recSym, levMax: S.levMax }, "+");
+      var minusPre = legLevPrefix({ sym: S.recSym, levMax: S.levMax }, "-");
       var tokens = [
         { sym: sym, name: S.recName || "Triad Receipt", badge: "RECEIPT", bFg: "#07070b", bBg: "#2fe6c0", bg: "linear-gradient(120deg, " + th.a + ", " + th.b + ")", glyph: S.emoji || "✦", logo: uLogo, api: "creator-set" },
-        { sym: ("+" + lev + "x" + u).slice(0, 10), name: "+" + lev + "x " + u + " · long", badge: "LONG", bFg: "#0c0c16", bBg: th.a, bg: th.a, glyph: "+", logo: uLogo, api: "/api/meta" },
-        { sym: ("-" + lev + "x" + u).slice(0, 10), name: "-" + lev + "x " + u + " · inverse", badge: "INV", bFg: "#0c0c16", bBg: th.b, bg: th.b, glyph: "−", logo: qLogo, api: "/api/meta" },
+        { sym: (plusPre + "x" + u).slice(0, 12), name: plusPre + "x " + u + " · long", badge: "LONG", bFg: "#0c0c16", bBg: th.a, bg: th.a, glyph: "+", logo: uLogo, api: "/api/meta" },
+        { sym: (minusPre + "x" + u).slice(0, 12), name: minusPre + "x " + u + " · inverse", badge: "INV", bFg: "#0c0c16", bBg: th.b, bg: th.b, glyph: "−", logo: qLogo, api: "/api/meta" },
       ].map(function (tk) {
         return '<div style="display:flex; align-items:center; gap:13px; padding:13px 14px; border-radius:14px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07);">' + tokenAvatar(tk, 42) + '<div style="flex:1; min-width:0;"><div style="display:flex; align-items:center; gap:8px;"><span style="font-size:15px; font-weight:600; color:#f4f4fb;">' + esc(tk.sym) + '</span><span style="font-family:\'IBM Plex Mono\',monospace; font-size:9px; padding:2px 6px; border-radius:5px; color:' + tk.bFg + "; background:" + tk.bBg + ';">' + tk.badge + '</span></div><div style="font-size:12px; color:#9494ad; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + esc(tk.name) + '</div></div><span style="flex:none; font-family:\'IBM Plex Mono\',monospace; font-size:9.5px; color:#54546a;">' + tk.api + "</span></div>";
       }).join("");
@@ -837,8 +960,9 @@
     } else {
       var half = S.seed / 2, dep = deployed(), launchIcon = underlyingIcon(40);
       var launchHead = '<div style="display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:16px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); margin-bottom:4px;">' + launchIcon + '<div style="flex:1; min-width:0;"><div style="font-size:16px; font-weight:700; color:#f4f4fb;">' + esc(sym) + '</div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:11px; color:#7e7e97; margin-top:2px;">' + (S.sideAInfo && S.sideAInfo.symbol ? esc(S.sideAInfo.symbol) + " · " : "") + esc(S.recName || factName) + "</div></div></div>";
-      var levL = synthLev(S.recSym, S.levMax), uL = (S.sideAInfo && S.sideAInfo.symbol) || "asset";
-      var plusLeg = "+" + levL + "x" + uL, minusLeg = "−" + levL + "x" + uL;
+      var uL = (S.sideAInfo && S.sideAInfo.symbol) || "asset";
+      var plusLeg = legLevPrefix({ sym: S.recSym, levMax: S.levMax }, "+") + "x" + uL;
+      var minusLeg = legLevPrefix({ sym: S.recSym, levMax: S.levMax }, "−") + "x" + uL;
       var amms = [
         { n: "1", pair: plusLeg + " / " + minusLeg, role: "primary leverage engine", bg: "rgba(47,230,192,0.14)", fg: "#2fe6c0", seed: fmtUsd(S.seed) },
         { n: "2", pair: plusLeg + " / " + quote, role: "USD anchor + TWAP", bg: "rgba(242,193,78,0.14)", fg: "#f2c14e", seed: fmtUsd(half) },
@@ -861,7 +985,7 @@
       h += '<div style="display:flex; flex-direction:column; gap:14px;">' + launchHead + '<div style="border-radius:20px; padding:18px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.08);"><div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;"><span style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em; text-transform:uppercase;">seed liquidity</span><span style="font-variant-numeric:tabular-nums;"><span style="font-size:24px; font-weight:700; color:#f4f4fb;">$' + Math.min(S.seed, S.usdc != null ? Math.floor(S.usdc) : S.seed).toLocaleString() + '</span></span></div><input data-act="onSeed" type="range" min="0" max="' + (S.usdc != null ? Math.max(1, Math.floor(S.usdc)) : 50000) + '" step="' + (S.usdc != null && S.usdc < 100 ? "0.5" : "10") + '" value="' + Math.min(S.seed, S.usdc != null ? Math.floor(S.usdc) : S.seed) + '" style="width:100%; accent-color:#a06bff; margin-bottom:8px;"/><div style="font-size:12px; color:#7e7e97;">split 50/50 to seed the 2 USDC pools' + (S.usdc != null ? " · your balance: $" + fmtN(S.usdc) : "") + "</div></div>" +
         solCard +
         '<div style="border-radius:20px; padding:18px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.08);"><div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;"><span style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em; text-transform:uppercase;">max leverage band</span><span style="font-variant-numeric:tabular-nums;"><span style="font-size:24px; font-weight:700; color:#2fe6c0;">' + S.levMax + '</span><span style="font-size:15px; color:#7e7e97;">×</span></span></div><input data-act="onLevMax" type="range" min="2" max="10" step="1" value="' + S.levMax + '" style="width:100%; accent-color:#2fe6c0;"/></div>' +
-        '<div style="border-radius:20px; padding:18px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,84,112,0.18);"><div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;"><span style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em; text-transform:uppercase;">MEME per pool</span><span style="font-variant-numeric:tabular-nums;">' + (function () { var mx = S.memeBal != null ? Math.floor(S.memeBal / 2) : 5000000; var v = Math.min(S.memeAmt, mx); return '<span style="font-size:24px; font-weight:700; color:#ff5470;">' + fmtN(v) + '</span><span style="font-size:14px; color:#7e7e97;"> MEME</span></span></div><input data-act="onMemeAmt" type="range" min="0" max="' + Math.max(1, mx) + '" step="' + Math.max(1, Math.round(mx / 200)) + '" value="' + v + '" style="width:100%; accent-color:#ff5470; margin-bottom:8px;"/><div style="font-size:12px; color:#7e7e97;">seeds BOTH MEME pools (' + fmtN(v) + " each = " + fmtN(v * 2) + " total)" + (S.memeBal != null ? " · your MEME: " + fmtN(S.memeBal) : "") + " · set to 0 to skip MEME pools (~" + (typeof window.MIMLaunchSolNeed === "function" ? window.MIMLaunchSolNeed(false).sol : "0.68") + " SOL instead)</div></div>"; })() +
+        '<div style="border-radius:20px; padding:18px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,84,112,0.18);"><div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;"><span style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em; text-transform:uppercase;">MEME per pool</span><span style="font-variant-numeric:tabular-nums;">' + (function () { var mx = S.memeBal != null ? Math.floor(S.memeBal / 2) : 5000000; var v = Math.min(S.memeAmt, mx); return '<span style="font-size:24px; font-weight:700; color:#ff5470;">' + fmtN(v) + '</span><span style="font-size:14px; color:#7e7e97;"> MEME</span></span></div><input data-act="onMemeAmt" type="range" min="0" max="' + Math.max(1, mx) + '" step="' + Math.max(1, Math.round(mx / 200)) + '" value="' + v + '" style="width:100%; accent-color:#ff5470; margin-bottom:8px;"/><div style="font-size:12px; color:#7e7e97;">seeds BOTH MEME pools (' + fmtN(v) + " each = " + fmtN(v * 2) + " total" + (S.memeUsd != null ? " ≈ $" + fmtN(v * 2 * S.memeUsd) : "") + ")" + (S.memeBal != null ? " · your MEME: " + fmtN(S.memeBal) : "") + (S.memeUsd != null ? " · " + (S.memeSym || "MEME") + " " + (S.memeUsd >= 1 ? "$" + S.memeUsd.toFixed(4) : "$" + S.memeUsd.toExponential(2)) : "") + ' · <a href="https://jup.ag/swap/USDC-' + MEME_MINT_ADDR + '" target="_blank" rel="noopener" style="color:#2fe6c0; text-decoration:none; font-weight:600;">buy MEME &#8599;</a>' + " · set to 0 to skip MEME pools (~" + (typeof window.MIMLaunchSolNeed === "function" ? window.MIMLaunchSolNeed(false).sol : "0.68") + " SOL instead)</div></div>"; })() +
         '<div style="border-radius:16px; padding:15px 16px; background:rgba(242,193,78,0.06); border:1px solid rgba(242,193,78,0.22); display:flex; flex-direction:column; gap:10px;"><div style="font-family:\'IBM Plex Mono\',monospace; font-size:10px; color:#f2c14e; letter-spacing:0.12em;">YOU PROVIDE FROM YOUR WALLET</div>' +
         [["USDC seed", "$" + S.seed.toLocaleString(), "split across the 2 USDC pools"], ["MEME", fmtN(S.memeAmt * 2) + " MEME", fmtN(S.memeAmt) + " into each MEME pool"], ["SOL", "~" + solNeed.sol + " SOL", solNeed.desc]].map(function (r) { return '<div style="display:flex; align-items:baseline; gap:8px;"><span style="font-size:13px; color:#eaeaf2; min-width:74px;">' + r[0] + '</span><span style="flex:1; height:1px; background:rgba(255,255,255,0.07);"></span><span style="text-align:right;"><span style="font-family:\'IBM Plex Mono\',monospace; font-size:13px; color:#f4f4fb;">' + r[1] + '</span><span style="display:block; font-size:10px; color:#7e7e97;">' + r[2] + "</span></span></div>"; }).join("") + "</div>" +
         '<div style="border-radius:20px; padding:18px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06);"><div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:12px;">5 AMMs · triangle atomic + 2 MEME pools</div><div style="display:flex; flex-direction:column; gap:8px;">' + amms + "</div></div>" +
@@ -873,14 +997,14 @@
   function provideView(th, sym, quote) {
     var pk = pairKey(S.activePair);
     var apyObj = DATA.apy[pk] || {};
-    var apyVal = apyObj.total;
+    var apyDisp = apyHead(apyObj, S.activePair);
     var nav = navOf(pk);
     var navRate = nav != null ? "$" + nav.toFixed(3) : "—";
     var pairTitle = (S.activePair && S.activePair.name) || sym;
     var h = '<div style="position:relative; z-index:10; width:100%; display:flex; justify-content:center; padding:18px clamp(14px,3vw,32px) 60px;"><div style="width:100%; max-width:480px; display:flex; flex-direction:column; gap:14px;">' + banner();
     var shareCopied = S.copied === "__share__";
     var symLbl = pairSymLabel(S.activePair) || sym;
-    h += '<div style="display:flex; align-items:center; gap:13px; padding:4px 2px;">' + pairIcon(S.activePair, 36) + '<div style="flex:1; min-width:0;"><div style="font-size:17px; font-weight:700; color:#f4f4fb; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + esc(pairTitle) + '</div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:11px; color:#7e7e97;">' + esc(symLbl) + " receipt" + (S.activePair && S.activePair.underlyingSymbol && !S.activePair.symCollides ? " · " + esc(S.activePair.underlyingSymbol) : "") + " · " + navRate + '</div></div><div style="flex:none; display:flex; align-items:center; gap:8px;"><div style="text-align:right;"><div style="font-size:15px; font-weight:700; color:#2fe6c0;">' + (apyVal != null ? apyVal.toFixed(1) + "%" : "—") + '</div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:9.5px; color:#7e7e97;">EST APY · USD-eq</div></div>' + btn("copyShareLink", null, "flex:none; padding:7px 10px; border-radius:10px; border:1px solid " + (shareCopied ? "rgba(47,230,192,0.45)" : "rgba(255,255,255,0.1)") + "; background:" + (shareCopied ? "rgba(47,230,192,0.08)" : "rgba(255,255,255,0.03)") + "; color:" + (shareCopied ? "#2fe6c0" : "#cfcfe0") + "; font-family:'IBM Plex Mono',monospace; font-size:10px; cursor:pointer; white-space:nowrap;", shareCopied ? "copied ✓" : "share ↗") + "</div></div>";
+    h += '<div style="display:flex; align-items:center; gap:13px; padding:4px 2px;">' + pairIcon(S.activePair, 36) + '<div style="flex:1; min-width:0;"><div style="font-size:17px; font-weight:700; color:#f4f4fb; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + esc(pairTitle) + '</div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:11px; color:#7e7e97;">' + esc(symLbl) + " receipt" + (S.activePair && S.activePair.underlyingSymbol && !S.activePair.symCollides ? " · " + esc(S.activePair.underlyingSymbol) : "") + " · " + navRate + '</div></div><div style="flex:none; display:flex; align-items:center; gap:8px;"><div style="text-align:right;"><div style="font-size:15px; font-weight:700; color:' + apyDisp.color + ';">' + esc(apyDisp.main) + '</div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:9.5px; color:#7e7e97;">' + esc(apyDisp.sub) + '</div></div>' + btn("copyShareLink", null, "flex:none; padding:7px 10px; border-radius:10px; border:1px solid " + (shareCopied ? "rgba(47,230,192,0.45)" : "rgba(255,255,255,0.1)") + "; background:" + (shareCopied ? "rgba(47,230,192,0.08)" : "rgba(255,255,255,0.03)") + "; color:" + (shareCopied ? "#2fe6c0" : "#cfcfe0") + "; font-family:'IBM Plex Mono',monospace; font-size:10px; cursor:pointer; white-space:nowrap;", shareCopied ? "copied ✓" : "share ↗") + "</div></div>";
     function tabBg(on, g) { return on ? "linear-gradient(100deg," + g + ")" : "transparent"; }
     h += playbookCard(pk, false);
     h += '<div style="display:flex; gap:6px; padding:5px; border-radius:14px; background:rgba(0,0,0,0.25);">' + btn("setTrade", null, "flex:1; padding:10px 0; border:none; border-radius:10px; font-size:13.5px; font-weight:600; cursor:pointer; color:" + (S.pTab === "trade" ? "#07070b" : "#9494ad") + "; background:" + tabBg(S.pTab === "trade", "#2fe6c0,#7ad9ff") + ";", "Provide") + btn("setCharts", null, "flex:1; padding:10px 0; border:none; border-radius:10px; font-size:13.5px; font-weight:600; cursor:pointer; color:" + (S.pTab === "charts" ? "#07070b" : "#9494ad") + "; background:" + tabBg(S.pTab === "charts", "#7ad9ff,#a06bff") + ";", "Charts") + "</div>";
@@ -951,20 +1075,40 @@
 
   function chartsView(th, sym, quote, apyObj) {
     var c = chart();
-    var apyVal = apyObj.total;
-    var apyHead = apyVal != null ? apyVal.toFixed(1) + "%" : "—";
-    var h = '<div style="display:flex; flex-direction:column; gap:14px;"><div style="border-radius:18px; padding:16px; background:linear-gradient(150deg, rgba(47,230,192,0.07), rgba(160,107,255,0.05)); border:1px solid rgba(255,255,255,0.08);"><div style="display:flex; align-items:flex-end; justify-content:space-between; gap:10px; flex-wrap:wrap;"><div><div style="font-size:30px; font-weight:700; color:#2fe6c0; line-height:1; font-variant-numeric:tabular-nums;">' + apyHead + '</div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:9.5px; color:#7e7e97; margin-top:6px; letter-spacing:0.06em;">EST APY · USD-EQUIV · QUOTE ' + quote + '</div></div></div><div style="font-size:10.5px; color:#54546a; margin-top:10px; line-height:1.4;">' + (apyVal != null ? "observed from on-chain nav growth — not an assumed rate." : "APY appears once the indexer has ≥2 on-chain observations of this pair.") + "</div></div>";
+    var apyDisp = apyHead(apyObj, S.activePair);
+    var h = '<div style="display:flex; flex-direction:column; gap:14px;"><div style="border-radius:18px; padding:16px; background:linear-gradient(150deg, rgba(47,230,192,0.07), rgba(160,107,255,0.05)); border:1px solid rgba(255,255,255,0.08);"><div style="display:flex; align-items:flex-end; justify-content:space-between; gap:10px; flex-wrap:wrap;"><div><div style="font-size:30px; font-weight:700; color:' + apyDisp.color + '; line-height:1; font-variant-numeric:tabular-nums;">' + esc(apyDisp.main) + '</div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:9.5px; color:#7e7e97; margin-top:6px; letter-spacing:0.06em;">EST APY · USD-EQUIV · QUOTE ' + quote + '</div></div></div><div style="font-size:10.5px; color:#54546a; margin-top:10px; line-height:1.4;">' + esc(apyDisp.foot) + "</div></div>";
     if (!c) return h + '<div style="border-radius:20px; padding:28px 16px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); text-align:center;"><div style="font-size:13px; color:#9494ad;">No price history yet.</div><div style="font-size:11.5px; color:#54546a; margin-top:6px; line-height:1.5;">The indexer builds this chart from real pool reserves as it polls. It fills in once the pair has on-chain activity.</div></div></div>';
     var last = c.last, chgCol = c.chgN >= 0 ? "#2fe6c0" : "#ff5470";
+    // nav/mint/redeem/va/vb are null until a pair has minted receipts (supply 0
+    // → readPair returns nulls). Format null-safe so the charts tab never throws.
+    var f4 = function (v) { return v == null ? "—" : v.toFixed(4); };
+    var f3 = function (v) { return v == null ? "—" : v.toFixed(3); };
+    var f2 = function (v) { return v == null || isNaN(v) ? "0.00" : v.toFixed(2); };
+    // Zero-receipt pair: NAV (= va+vb) is undefined until the first deposit mints
+    // the receipt. Don't render a misleading flat $— chart — show an honest
+    // panel with the real pool TVL and a route to this pair's live leaderboard.
+    if (last == null || last.nav == null) {
+      var tvlStr = last && last.tvl != null ? "$" + Number(last.tvl).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—";
+      return h +
+        '<div style="border-radius:20px; padding:24px 18px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); text-align:center;">' +
+          '<div style="font-family:\'IBM Plex Mono\',monospace; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:#f2c14e;">apy pending · no receipts minted</div>' +
+          '<div style="font-size:14px; color:#cfcfe0; margin-top:10px; line-height:1.55; max-width:440px; margin-left:auto; margin-right:auto;">The NAV (mint / redeem) and backing charts begin once the first deposit mints the <b>' + esc(sym) + '</b> receipt. The leg pools are already live and trading.</div>' +
+          '<div style="display:flex; gap:26px; justify-content:center; margin-top:18px; flex-wrap:wrap;">' +
+            '<div><div style="font-size:9px; letter-spacing:0.12em; text-transform:uppercase; color:#54546a;">pool tvl</div><div style="font-size:20px; font-weight:700; color:#f4f4fb; font-variant-numeric:tabular-nums; margin-top:3px;">' + tvlStr + '</div></div>' +
+          '</div>' +
+          '<a href="/leaderboard" style="display:inline-block; margin-top:20px; padding:9px 16px; border-radius:10px; border:1px solid rgba(160,107,255,0.4); background:rgba(160,107,255,0.1); color:#cdbcff; text-decoration:none; font-size:12px; font-weight:600;">see long / short / LP P&amp;L for this pair →</a>' +
+        '</div></div>';
+    }
     var tfChips = ["1H", "1D", "1W", "1M", "ALL"].map(function (t) { var on = S.tf === t; return btn("setTf", t, "flex:1; padding:7px 0; border-radius:9px; border:1px solid " + (on ? "#a06bff" : "rgba(255,255,255,0.1)") + "; background:" + (on ? "rgba(160,107,255,0.16)" : "rgba(255,255,255,0.02)") + "; color:" + (on ? "#cdbcff" : "#9494ad") + "; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; cursor:pointer;", t); }).join("");
-    h += '<div style="border-radius:20px; padding:16px 16px 12px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07);"><div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:4px; flex-wrap:wrap;"><div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.1em; text-transform:uppercase;">receipt quote cost</div><div style="font-size:12.5px; color:#7e7e97; margin-top:3px;">' + esc(sym) + " / " + quote + ' · redeemable vs mintable</div></div><div style="text-align:right;"><div style="font-size:22px; font-weight:700; color:#f4f4fb; font-variant-numeric:tabular-nums;">$' + last.nav.toFixed(4) + '</div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:11px; color:' + chgCol + ';">' + (c.chgN >= 0 ? "+" : "") + c.chgN.toFixed(2) + "% · " + S.tf + '</div></div></div><div style="display:flex; gap:14px; margin:6px 0 4px; font-family:\'IBM Plex Mono\',monospace; font-size:10.5px;"><span style="color:#a06bff;">■ mint (ask) $' + last.mint.toFixed(4) + '</span><span style="color:#2fe6c0;">■ redeem (bid) $' + last.redeem.toFixed(4) + '</span></div>' +
+    h += '<div style="border-radius:20px; padding:16px 16px 12px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07);"><div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:4px; flex-wrap:wrap;"><div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.1em; text-transform:uppercase;">receipt quote cost</div><div style="font-size:12.5px; color:#7e7e97; margin-top:3px;">' + esc(sym) + " / " + quote + ' · redeemable vs mintable</div></div><div style="text-align:right;"><div style="font-size:22px; font-weight:700; color:#f4f4fb; font-variant-numeric:tabular-nums;">$' + f4(last.nav) + '</div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:11px; color:' + chgCol + ';">' + (c.chgN >= 0 ? "+" : "") + f2(c.chgN) + "% · " + S.tf + '</div></div></div><div style="display:flex; gap:14px; margin:6px 0 4px; font-family:\'IBM Plex Mono\',monospace; font-size:10.5px;"><span style="color:#a06bff;">■ mint (ask) $' + f4(last.mint) + '</span><span style="color:#2fe6c0;">■ redeem (bid) $' + f4(last.redeem) + '</span></div>' +
       '<div id="chart-spread" style="position:relative; width:100%; touch-action:none; cursor:crosshair;"><svg width="100%" viewBox="0 0 320 150" preserveAspectRatio="none" style="display:block; height:clamp(150px,30vw,200px);"><defs><linearGradient id="spreadg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(160,107,255,0.18)"/><stop offset="1" stop-color="rgba(47,230,192,0.10)"/></linearGradient></defs><path d="' + c.spreadFill + '" fill="url(#spreadg)"/><polyline points="' + c.redeemLine + '" fill="none" stroke="#2fe6c0" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/><polyline points="' + c.mintLine + '" fill="none" stroke="#a06bff" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>' +
       (c.H.hoverOn ? '<line x1="' + c.H.crossX + '" y1="0" x2="' + c.H.crossX + '" y2="150" stroke="rgba(255,255,255,0.35)" stroke-width="1" vector-effect="non-scaling-stroke"/><circle cx="' + c.H.crossX + '" cy="' + c.H.cyMint + '" r="3.4" fill="#a06bff" stroke="#0c0c16" stroke-width="1.5"/><circle cx="' + c.H.crossX + '" cy="' + c.H.cyRedeem + '" r="3.4" fill="#2fe6c0" stroke="#0c0c16" stroke-width="1.5"/>' : "") + "</svg>" +
       (c.H.hoverOn ? '<div style="position:absolute; top:2px; left:' + c.H.hoverPct + '; transform:translateX(-50%); pointer-events:none; background:#14141e; border:1px solid rgba(255,255,255,0.12); border-radius:9px; padding:7px 9px; white-space:nowrap; box-shadow:0 8px 20px rgba(0,0,0,0.5);"><div style="font-family:\'IBM Plex Mono\',monospace; font-size:9px; color:#7e7e97; margin-bottom:3px;">' + c.H.hovLabel + '</div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#a06bff;">mint ' + c.H.hovMint + '</div><div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#2fe6c0;">redeem ' + c.H.hovRedeem + "</div></div>" : "") + "</div>" +
       '<div style="display:flex; justify-content:space-between; font-family:\'IBM Plex Mono\',monospace; font-size:9.5px; color:#54546a; margin-top:6px;"><span>' + c.xStart + '</span><span>now</span></div><div style="display:flex; gap:6px; margin-top:10px;">' + tfChips + "</div></div>";
-    var levC = synthLev(sym, S.activePair && S.activePair.levMax), uC = (S.activePair && S.activePair.underlyingSymbol) || sym.replace(/^\d+x/i, "") || "asset";
-    var plusLbl = "+" + levC + "x " + uC, minusLbl = "−" + levC + "x " + uC;
-    h += '<div style="border-radius:20px; padding:16px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07);"><div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; flex-wrap:wrap; gap:6px;"><div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.1em; text-transform:uppercase;">backing · per receipt</div><div style="display:flex; gap:12px; font-family:\'IBM Plex Mono\',monospace; font-size:10.5px;"><span style="color:' + th.a + ';">■ ' + esc(plusLbl) + ' $' + last.va.toFixed(3) + '</span><span style="color:' + th.b + ';">■ ' + esc(minusLbl) + ' $' + last.vb.toFixed(3) + '</span></div></div><svg width="100%" viewBox="0 0 320 130" preserveAspectRatio="none" style="display:block; height:clamp(120px,24vw,160px); margin-top:6px;"><path d="' + c.aArea + '" fill="' + toRgba(th.a, 0.2) + '"/><path d="' + c.bArea + '" fill="' + toRgba(th.b, 0.2) + '"/><polyline points="' + c.vaLine + '" fill="none" stroke="' + th.a + '" stroke-width="1.5" vector-effect="non-scaling-stroke"/><polyline points="' + c.navTopLine + '" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg><div style="font-size:10.5px; color:#54546a; margin-top:8px; line-height:1.4;">the heavier band is the side the crank minted into — “mint the loser” drift, in USD terms.</div></div>';
+    var uC = (S.activePair && S.activePair.underlyingSymbol) || sym.replace(/^\d+x/i, "") || "asset";
+    var plusLbl = legLevPrefix(S.activePair || { sym: sym }, "+") + "x " + uC;
+    var minusLbl = legLevPrefix(S.activePair || { sym: sym }, "−") + "x " + uC;
+    h += '<div style="border-radius:20px; padding:16px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07);"><div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; flex-wrap:wrap; gap:6px;"><div style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; color:#9494ad; letter-spacing:0.1em; text-transform:uppercase;">backing · per receipt</div><div style="display:flex; gap:12px; font-family:\'IBM Plex Mono\',monospace; font-size:10.5px;"><span style="color:' + th.a + ';">■ ' + esc(plusLbl) + ' $' + f3(last.va) + '</span><span style="color:' + th.b + ';">■ ' + esc(minusLbl) + ' $' + f3(last.vb) + '</span></div></div><svg width="100%" viewBox="0 0 320 130" preserveAspectRatio="none" style="display:block; height:clamp(120px,24vw,160px); margin-top:6px;"><path d="' + c.aArea + '" fill="' + toRgba(th.a, 0.2) + '"/><path d="' + c.bArea + '" fill="' + toRgba(th.b, 0.2) + '"/><polyline points="' + c.vaLine + '" fill="none" stroke="' + th.a + '" stroke-width="1.5" vector-effect="non-scaling-stroke"/><polyline points="' + c.navTopLine + '" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg><div style="font-size:10.5px; color:#54546a; margin-top:8px; line-height:1.4;">the heavier band is the side the crank minted into — “mint the loser” drift, in USD terms.</div></div>';
     return h + "</div>";
   }
 
