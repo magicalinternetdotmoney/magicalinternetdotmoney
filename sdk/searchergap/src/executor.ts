@@ -18,9 +18,22 @@ import {
   PublicKey,
   TransactionInstruction,
   SystemProgram,
+  ComputeBudgetProgram,
   VersionedTransaction,
   TransactionMessage,
 } from "@solana/web3.js";
+
+/**
+ * Compute-budget instructions sized for a MULTI-swap bundle. Jupiter's own
+ * swap-instructions set a CU limit for the Jupiter leg only; appending a
+ * protocol CP-Swap (or a crank) blows past it ("exceeded CUs meter"). Prepend
+ * THESE instead of Jupiter's and drop Jupiter's compute-budget ixs.
+ */
+export function computeBudgetIxs(units = 800_000, microLamports = 0): TransactionInstruction[] {
+  const ixs = [ComputeBudgetProgram.setComputeUnitLimit({ units })];
+  if (microLamports > 0) ixs.push(ComputeBudgetProgram.setComputeUnitPrice({ microLamports }));
+  return ixs;
+}
 import { CP_PROGRAM_ID, DEFAULT_PROGRAM_ID, type Market } from "./markets";
 import { getAmountOut } from "./cpswap";
 import type { TriangleReserves } from "./markets";

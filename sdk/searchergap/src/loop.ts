@@ -5,7 +5,7 @@
  * signs when YOU hand it a Keypair and set `live: true`.
  */
 
-import { Connection, Keypair } from "@solana/web3.js";
+import { Connection, Keypair, VersionedTransaction } from "@solana/web3.js";
 import { discoverMarkets, readTriangle, type Market } from "./markets";
 import { triangleGap, externalGap } from "./gap";
 import { loadAmmConfigs, buildTriangleArbIxs, jitoTipIx, buildUnsignedTx } from "./executor";
@@ -44,6 +44,33 @@ export interface ScanHit {
 
 const usd = (n: bigint) => "$" + (Number(n) / 1e6).toFixed(4);
 
+/**
+ * Simulate first, ALWAYS — only send a profit-guarded bundle if the simulation
+ * actually clears. A reverting sim means the (slippage-blind) detection
+ * over-estimated; we skip instead of burning a fee on a guaranteed revert.
+ */
+async function settle(
+  connection: Connection,
+  tx: VersionedTransaction,
+  opts: LoopOpts,
+  log: (m: string) => void,
+  label: string,
+): Promise<{ ok: boolean; err?: unknown; txid?: string }> {
+  const sim = await connection.simulateTransaction(tx, { sigVerify: false, replaceRecentBlockhash: true });
+  if (sim.value.err) {
+    log(`  ${label}: not profitable at size — guard reverts, skip`);
+    return { ok: false, err: sim.value.err };
+  }
+  if (opts.live && opts.keeper) {
+    tx.sign([opts.keeper]);
+    const txid = await connection.sendRawTransaction(tx.serialize());
+    log(`  ${label}: ✓ sim-confirmed PROFIT → sent ${txid}`);
+    return { ok: true, txid };
+  }
+  log(`  ${label}: ✓ sim-confirmed PROFIT (dry-run — would send)`);
+  return { ok: true };
+}
+
 /** One pass over all markets. Returns the hits that cleared `minProfit`. */
 export async function scanOnce(connection: Connection, opts: LoopOpts = {}): Promise<ScanHit[]> {
   const minProfit = opts.minProfitUsdcAtoms ?? 50_000n;
@@ -69,33 +96,20 @@ export async function scanOnce(connection: Connection, opts: LoopOpts = {}): Pro
         const fairFor = (l: "A" | "B") => (l === "A" ? fairA : fairB);
         for (const leg of [ext.legA, ext.legB]) {
           if (!leg?.action || leg.profitUsdc < minProfit) continue;
-          log(`XVENUE ${m.config.toBase58().slice(0, 8)} leg${leg.leg} ${leg.action} ${leg.devBps.toFixed(0)}bps vs Jupiter → est ${usd(leg.profitUsdc)}`);
-          const hit: ScanHit = {
-            market: m.config.toBase58(), direction: `xvenue:${leg.leg}:${leg.action}`,
-            inputUsdc: leg.optimalIn, profitUsdc: leg.profitUsdc, profitBps: Math.round(leg.devBps),
-          };
+          // candidate only — the analytic est ignores slippage; simulation decides.
+          log(`XVENUE? ${m.config.toBase58().slice(0, 8)} leg${leg.leg} ${leg.action} ${leg.devBps.toFixed(0)}bps vs Jupiter (candidate, est ${usd(leg.profitUsdc)})`);
           // SELL side is the hard-guarded one: Jupiter buy → protocol sell (last).
-          // Build the atomic cross-venue bundle when we have an owner to build for.
           if (leg.action === "sell" && keeper) {
             try {
-              const fair = fairFor(leg.leg);
-              const amountInUsdc = BigInt(Math.max(1, Math.floor(Number(leg.optimalIn) * fair)));
+              const amountInUsdc = BigInt(Math.max(1, Math.floor(Number(leg.optimalIn) * fairFor(leg.leg))));
               const arb = await buildCrossVenueArb({
                 connection, owner: keeper.publicKey, market: m, leg: leg.leg,
                 amountInUsdc, minProfitUsdc: minProfit, jupiter: opts.jupiter, tipLamports: opts.tipLamports,
               });
-              if (opts.live) {
-                arb.tx.sign([keeper]);
-                hit.txid = await connection.sendRawTransaction(arb.tx.serialize());
-                log(`  xvenue sent: ${hit.txid}`);
-              } else {
-                const sim = await connection.simulateTransaction(arb.tx, { sigVerify: false, replaceRecentBlockhash: true });
-                hit.simErr = sim.value.err;
-                log(`  xvenue dry-run sim err: ${JSON.stringify(sim.value.err)}`);
-              }
-            } catch (e) { log(`  xvenue build skipped: ${(e as Error).message}`); }
+              const r = await settle(connection, arb.tx, opts, log, `xvenue ${leg.leg}`);
+              if (r.ok) hits.push({ market: m.config.toBase58(), direction: `xvenue:${leg.leg}:${leg.action}`, inputUsdc: amountInUsdc, profitUsdc: leg.profitUsdc, profitBps: Math.round(leg.devBps), txid: r.txid });
+            } catch (e) { log(`  xvenue build skipped: ${(e as Error).message.slice(0, 120)}`); }
           }
-          hits.push(hit);
         }
       } catch { /* jup rate-limit / no route — skip this tick */ }
     }
@@ -109,21 +123,9 @@ export async function scanOnce(connection: Connection, opts: LoopOpts = {}): Pro
           minProfitUsdc: minProfit, jupiter: opts.jupiter, tipLamports: opts.tipLamports,
         });
         if (!ca.noop && ca.tx) {
-          log(`CRANK-ARB ${m.config.toBase58().slice(0, 8)} loser${ca.loser} in=${usd(ca.amountInUsdc!)} → est ${usd(ca.estProfitUsdc!)}`);
-          const hit: ScanHit = {
-            market: m.config.toBase58(), direction: `crank-arb:${ca.loser}`,
-            inputUsdc: ca.amountInUsdc!, profitUsdc: ca.estProfitUsdc!, profitBps: 0,
-          };
-          if (opts.live) {
-            ca.tx.sign([keeper]);
-            hit.txid = await connection.sendRawTransaction(ca.tx.serialize());
-            log(`  crank-arb sent: ${hit.txid}`);
-          } else {
-            const sim = await connection.simulateTransaction(ca.tx, { sigVerify: false, replaceRecentBlockhash: true });
-            hit.simErr = sim.value.err;
-            log(`  crank-arb sim err: ${JSON.stringify(sim.value.err)}`);
-          }
-          hits.push(hit);
+          log(`CRANK-ARB? ${m.config.toBase58().slice(0, 8)} loser${ca.loser} in=${usd(ca.amountInUsdc!)} (candidate, est ${usd(ca.estProfitUsdc!)})`);
+          const r = await settle(connection, ca.tx, opts, log, `crank-arb ${ca.loser}`);
+          if (r.ok) hits.push({ market: m.config.toBase58(), direction: `crank-arb:${ca.loser}`, inputUsdc: ca.amountInUsdc!, profitUsdc: ca.estProfitUsdc!, profitBps: 0, txid: r.txid });
         }
       } catch { /* skip this market this tick */ }
     }
@@ -131,7 +133,7 @@ export async function scanOnce(connection: Connection, opts: LoopOpts = {}): Pro
     const gap = triangleGap(reserves, m.tradeFeeBps);
     if (!gap.direction || gap.profitUsdc < minProfit) continue;
 
-    log(`GAP ${m.config.toBase58().slice(0, 8)} ${gap.direction} in=${usd(gap.inputUsdc)} → profit=${usd(gap.profitUsdc)} (${gap.profitBps}bps)`);
+    log(`TRIANGLE? ${m.config.toBase58().slice(0, 8)} ${gap.direction} in=${usd(gap.inputUsdc)} (candidate, est ${usd(gap.profitUsdc)} / ${gap.profitBps}bps)`);
 
     const ammConfigs = await loadAmmConfigs(connection, m);
     const payer = payerOf(m);
@@ -143,21 +145,8 @@ export async function scanOnce(connection: Connection, opts: LoopOpts = {}): Pro
       jitoTipIx(payer, opts.tipLamports ?? 10_000),
     ];
     const tx = await buildUnsignedTx(connection, payer, ixs);
-
-    const hit: ScanHit = {
-      market: m.config.toBase58(), direction: gap.direction,
-      inputUsdc: gap.inputUsdc, profitUsdc: gap.profitUsdc, profitBps: gap.profitBps,
-    };
-    if (opts.live && keeper) {
-      tx.sign([keeper]);
-      hit.txid = await connection.sendRawTransaction(tx.serialize());
-      log(`  sent: ${hit.txid}`);
-    } else {
-      const sim = await connection.simulateTransaction(tx, { sigVerify: false, replaceRecentBlockhash: true });
-      hit.simErr = sim.value.err;
-      log(`  dry-run sim err: ${JSON.stringify(sim.value.err)}`);
-    }
-    hits.push(hit);
+    const r = await settle(connection, tx, opts, log, `triangle ${gap.direction}`);
+    if (r.ok) hits.push({ market: m.config.toBase58(), direction: gap.direction, inputUsdc: gap.inputUsdc, profitUsdc: gap.profitUsdc, profitBps: gap.profitBps, txid: r.txid });
   }
   return hits;
 }

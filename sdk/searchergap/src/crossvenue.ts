@@ -20,7 +20,7 @@ import {
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
-import { cpSwapBaseInputIx, jitoTipIx, loadAmmConfig, buildCrankIx, priceCrawlPda, type SwapLeg } from "./executor";
+import { cpSwapBaseInputIx, jitoTipIx, loadAmmConfig, buildCrankIx, priceCrawlPda, computeBudgetIxs, type SwapLeg } from "./executor";
 import { jupiterQuote, jupiterSwapInstructions, fetchAddressLookupTables, jupiterFairVsUsdc, type JupiterOpts } from "./jupiter";
 import { readTriangle, readConfig, type Market } from "./markets";
 import { simulateCrank, applyCrankToReserves, externalGap } from "./gap";
@@ -85,7 +85,7 @@ export async function buildCrossVenueArb(args: {
 
   // 3. Assemble: jup compute-budget + setup + swap → protocol sell → cleanup → tip.
   const ixs: TransactionInstruction[] = [
-    ...jup.computeBudget,
+    ...computeBudgetIxs(),
     ...jup.setup,
     jup.swap,
     protocolSell,
@@ -193,7 +193,7 @@ export async function buildCrankArbBundle(args: {
   // 5. fuse: compute-budget, crank, jup setup, protocol buy, jup swap, cleanup, tip.
   const crank = buildCrankIx({ market: m, leverageBps: args.userLeverageBps ?? 0n, priceCrawl: priceCrawlPda(m.config) });
   const ixs: TransactionInstruction[] = [
-    ...jup.computeBudget,
+    ...computeBudgetIxs(),
     crank,
     ...jup.setup,
     protocolBuy,
