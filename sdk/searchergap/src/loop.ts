@@ -93,9 +93,14 @@ export async function scanOnce(connection: Connection, opts: LoopOpts = {}): Pro
   const payerOf = (m: Market) => keeper?.publicKey ?? m.config; // dry-run: never signed
 
   const hits: ScanHit[] = [];
-  for (const m of await discoverMarkets(connection)) {
+  const markets = await discoverMarkets(connection);
+  log(`— scanning ${markets.length} markets —`);
+  for (const m of markets) {
+    const id = m.config.toBase58().slice(0, 8);
     let reserves;
-    try { reserves = await readTriangle(connection, m); } catch { continue; }
+    try { reserves = await readTriangle(connection, m); } catch { log(`· ${id}: unreadable, skip`); continue; }
+    const gap = triangleGap(reserves, m.tradeFeeBps);
+    log(`· ${id}  tvl≈$${((Number(reserves.aqUsdc) + Number(reserves.bqUsdc)) / 1e6).toFixed(0)}  triangle:${gap.direction ? "$" + (Number(gap.profitUsdc) / 1e6).toFixed(4) + " " + gap.direction : "coherent"}`);
 
     // cross-venue surface: each leg's protocol price vs Jupiter's best route.
     if (opts.jupiter?.enabled) {
@@ -152,10 +157,9 @@ export async function scanOnce(connection: Connection, opts: LoopOpts = {}): Pro
       } catch { /* skip this market this tick */ }
     }
 
-    const gap = triangleGap(reserves, m.tradeFeeBps);
     if (!gap.direction || gap.profitUsdc < minProfit) continue;
 
-    log(`TRIANGLE? ${m.config.toBase58().slice(0, 8)} ${gap.direction} in=${usd(gap.inputUsdc)} (candidate, est ${usd(gap.profitUsdc)} / ${gap.profitBps}bps)`);
+    log(`TRIANGLE? ${id} ${gap.direction} in=${usd(gap.inputUsdc)} (candidate, est ${usd(gap.profitUsdc)} / ${gap.profitBps}bps)`);
 
     const ammConfigs = await loadAmmConfigs(connection, m);
     const payer = payerOf(m);
