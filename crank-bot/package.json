@@ -1,0 +1,14 @@
+{
+  "name": "mim-crank-bot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Permissionless rebalance crank loop for Magical Internet Money",
+  "scripts": {
+    "build": "cd ../sdk/searchergap && npm run build",
+    "start": "node ../sdk/searchergap/dist/bin/searchergap.js crank",
+    "once": "node ../sdk/searchergap/dist/bin/searchergap.js crank --once"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

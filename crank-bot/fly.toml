@@ -1,0 +1,15 @@
+# Rebalance crank bot — deploy: `fly deploy` (from crank-bot/).
+# Secrets: RPC_URL, KEYPAIR (json array of secret key bytes)
+app = "mim-crank-bot"
+primary_region = "iad"
+
+# Deploy from repo root: fly deploy -c crank-bot/fly.toml
+[build]
+  dockerfile = "crank-bot/Dockerfile"
+
+[env]
+  CRANK_POLL_MS = "60000"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
