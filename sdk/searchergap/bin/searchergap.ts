@@ -6,8 +6,9 @@
  *   npx searchergap scan --rpc https://... --json
  */
 
-import { Connection } from "@solana/web3.js";
-import { scanAll } from "../src/index";
+import { Connection, Keypair } from "@solana/web3.js";
+import { readFileSync } from "node:fs";
+import { scanAll, runLoop } from "../src/index";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -22,13 +23,43 @@ function fmtUsdc(atoms: bigint): string {
   return `${neg ? "-" : ""}$${whole.toLocaleString()}.${frac}`;
 }
 
+function usage() {
+  console.log(`usage:
+  searchergap scan  [--rpc <url>] [--json]
+  searchergap run   [--rpc <url>] [--live] [--keypair <path>] [--min-profit <usdc-atoms>] [--poll <ms>] [--tip <lamports>]
+
+  run is DRY-RUN by default (scan + build + simulate, never sends).
+  --live signs with --keypair (or $KEYPAIR) and sends. You run that; the SDK only signs when you ask.
+  env: RPC_URL, KEYPAIR, MIN_PROFIT_USDC_ATOMS, POLL_MS`);
+}
+
+function loadKeeper(): Keypair {
+  const path = arg("keypair") || process.env.KEYPAIR;
+  if (!path) throw new Error("--live needs --keypair <path> or $KEYPAIR");
+  return Keypair.fromSecretKey(new Uint8Array(JSON.parse(readFileSync(path.replace(/^~/, process.env.HOME || "~"), "utf8"))));
+}
+
 async function main() {
   const cmd = process.argv[2];
+  const rpc = arg("rpc") || process.env.RPC_URL || "https://api.mainnet-beta.solana.com";
+
+  if (cmd === "run") {
+    const live = process.argv.includes("--live");
+    const connection = new Connection(rpc, "confirmed");
+    runLoop(connection, {
+      live,
+      keeper: live ? loadKeeper() : null,
+      minProfitUsdcAtoms: BigInt(arg("min-profit") || process.env.MIN_PROFIT_USDC_ATOMS || "50000"),
+      pollMs: Number(arg("poll") || process.env.POLL_MS || 4000),
+      tipLamports: Number(arg("tip") || 10000),
+    });
+    return; // runLoop keeps the process alive via setInterval
+  }
+
   if (cmd !== "scan") {
-    console.log("usage: searchergap scan [--rpc <url>] [--json]");
+    usage();
     process.exit(cmd ? 1 : 0);
   }
-  const rpc = arg("rpc") || process.env.RPC_URL || "https://api.mainnet-beta.solana.com";
   const json = process.argv.includes("--json");
   const connection = new Connection(rpc, "confirmed");
 

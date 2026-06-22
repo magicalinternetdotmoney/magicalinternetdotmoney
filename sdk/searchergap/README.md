@@ -190,25 +190,42 @@ nothing there. Hunt organic flow and the peg lag.
 
 ## Run it (the profit loop)
 
-A complete searcher loop lives in
-[`examples/searcher-loop.mjs`](./examples/searcher-loop.mjs): scan → find a
-profit-guarded gap → build the bundle. **Dry-run by default** (build + simulate,
-never sends); `--live` signs with your keeper and sends — *you* run that, the
-SDK never signs.
+The keeper ships **inside the package** — run it straight from npm, no
+boilerplate:
 
 ```bash
-# safe: scan + build + SIMULATE, never sends
-RPC_URL=https://… node searcher-loop.mjs
+# DRY-RUN: scan → build → SIMULATE. never sends. safe right now.
+npx @magicalinternet/searchergap run --rpc https://your-rpc
 
-# live: signs with KEYPAIR and sends (you run this)
-RPC_URL=https://… KEYPAIR=~/keeper.json MIN_PROFIT_USDC_ATOMS=50000 node searcher-loop.mjs --live
+# LIVE: signs with your keeper + sends. you run this; the SDK only signs when you ask.
+npx @magicalinternet/searchergap run --live --keypair ~/keeper.json --min-profit 50000 --rpc https://your-rpc
+```
+
+Or drive it from code:
+
+```ts
+import { Connection, Keypair } from "@solana/web3.js";
+import { runLoop, scanOnce } from "@magicalinternet/searchergap";
+
+const conn = new Connection(process.env.RPC_URL!, "confirmed");
+const { stop } = runLoop(conn, {
+  live: true,
+  keeper: Keypair.fromSecretKey(/* your secret */),
+  minProfitUsdcAtoms: 50_000n,
+});
+// scanOnce(conn, opts) for a single pass.
 ```
 
 The arb's final hop is profit-guarded (`min_out = amountIn + minProfit`), so a
-live send **reverts unless it clears `MIN_PROFIT`** — you never eat a bad fill.
-In production, submit as a Jito bundle (atomic, no revert cost). Today it prints
-"no gaps" (thin, coherent markets) — that's the honest state; the loop is wired
-for when opportunities arrive.
+live send **reverts unless it clears min-profit** — you never eat a bad fill. In
+production, submit as a Jito bundle (atomic, no revert cost). Today it prints
+"no gaps" (thin, coherent markets) — the honest state; it's wired for when
+opportunities arrive. A copy-paste version is in
+[`examples/searcher-loop.mjs`](./examples/searcher-loop.mjs).
+
+> The `$0.0246` figure you may have seen in dev was a **unit test with synthetic
+> inputs** (a hand-set ratio gap + a hand-set external fair price) proving the
+> math — not a live opportunity. Live scans return `$0` until a real gap exists.
 
 ## API
 

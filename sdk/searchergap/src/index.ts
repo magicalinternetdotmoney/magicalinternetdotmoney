@@ -24,6 +24,7 @@ export * from "./cpswap";
 export * from "./markets";
 export * from "./gap";
 export * from "./executor";
+export * from "./loop";
 
 export interface MarketScan {
   market: Market;
