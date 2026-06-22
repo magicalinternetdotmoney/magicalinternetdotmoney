@@ -3,11 +3,16 @@
   "private": true,
   "version": "0.1.0",
   "description": "Magical Internet Money — site + indexer + tx builder",
-  "scripts": { "start": "node server.js" },
-  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@metaplex-foundation/mpl-token-metadata": "^2.13.0",
+    "@solana/spl-token": "^0.4.0",
     "@solana/web3.js": "^1.98.0",
-    "@solana/spl-token": "^0.4.0"
+    "pg": "^8.22.0"
   }
 }
