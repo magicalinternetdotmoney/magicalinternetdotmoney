@@ -61,27 +61,31 @@ async function searchAndSend(
   start: bigint,
   floor: bigint,
   maxTries = 8,
+  /** how to render the search amount — usd for USDC sizes, raw for token atoms. */
+  fmt: (a: bigint) => string = usd,
 ): Promise<{ ok: boolean; amount?: bigint; txid?: string }> {
   let amount = start;
   for (let i = 0; i < maxTries && amount >= floor; i++) {
     let tx: VersionedTransaction | null = null;
-    try { tx = await build(amount); } catch (e) { log(`  ${label} @ ${usd(amount)}: build err ${(e as Error).message.slice(0, 60)}`); amount /= 2n; continue; }
+    try { tx = await build(amount); } catch (e) { log(`  ${label} @ ${fmt(amount)}: build err ${(e as Error).message.slice(0, 60)}`); amount /= 2n; continue; }
     if (!tx) { amount /= 2n; continue; }
     const sim = await connection.simulateTransaction(tx, { sigVerify: false, replaceRecentBlockhash: true });
     if (!sim.value.err) {
+      // NOTE: `fmt(amount)` is the INPUT SIZE, not the profit. Profit = the
+      // guard's minProfit floor; the true PnL is your post-send balance delta.
       if (opts.live && opts.keeper) {
         tx.sign([opts.keeper]);
         const txid = await connection.sendRawTransaction(tx.serialize());
-        log(`  ${label}: ✓ PROFIT at ${usd(amount)} → sent ${txid}`);
+        log(`  ${label}: ✓ sim-ok at size ${fmt(amount)} → sent ${txid}`);
         return { ok: true, amount, txid };
       }
-      log(`  ${label}: ✓ PROFIT at ${usd(amount)} (dry-run — would send)`);
+      log(`  ${label}: ✓ sim-ok at size ${fmt(amount)} (dry-run — would send)`);
       return { ok: true, amount };
     }
-    log(`  ${label} @ ${usd(amount)}: reverts → halving`);
+    log(`  ${label} @ ${fmt(amount)}: reverts → halving`);
     amount /= 2n;
   }
-  log(`  ${label}: no profitable size down to ${usd(floor)} — skip`);
+  log(`  ${label}: no profitable size down to ${fmt(floor)} — skip`);
   return { ok: false };
 }
 
@@ -128,7 +132,8 @@ export async function scanOnce(connection: Connection, opts: LoopOpts = {}): Pro
               connection, owner: keeper.publicKey, market: m, soldAtoms: sold,
               minProfitUsdc: minProfit, tipLamports: opts.tipLamports,
             })).tx ?? null,
-            loserRes / 40n, loserRes / 4000n,
+            loserRes / 40n, loserRes / 4000n, 8,
+            (a) => `${a.toString()} atoms`,
           );
           if (r.ok) hits.push({ market: m.config.toBase58(), direction: `crank-cap:${loser}`, inputUsdc: r.amount ?? 0n, profitUsdc: minProfit, profitBps: Number(plan.absReturnBps), txid: r.txid });
         }
