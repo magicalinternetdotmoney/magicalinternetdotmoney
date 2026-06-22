@@ -244,4 +244,113 @@ export function applyLegBuyToReserves(
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// External gap — the post-crank, cross-venue / vs-fair surface.
+//
+// The crank keeps the INTERNAL triangle coherent, but it moves the loser's
+// price ONLY in the protocol pools — dislocating it vs every external
+// reference. `externalGap` prices a protocol leg against a fair value the
+// searcher brings (another venue's price, or the underlying-implied −Nx) and
+// returns the executable in-protocol trade + profit to close the gap.
+//
+// UNITS: `fairPrice` is USDC-atoms per token-atom — the same ratio the pool
+// gives as `Number(usdcReserve)/Number(tokenReserve)`. Profit is USDC atoms.
+// ---------------------------------------------------------------------------
+
+export interface ExternalArb {
+  leg: "A" | "B";
+  /** protocol pool price (usdc-atoms per token-atom). */
+  poolPrice: number;
+  /** caller-supplied fair price (same units). */
+  fairPrice: number;
+  /** (poolPrice/fair − 1) in bps. negative = protocol cheap (buy). */
+  devBps: number;
+  /** buy = protocol cheap (buy in-protocol, sell external); sell = protocol rich. */
+  action: "buy" | "sell" | null;
+  /** optimal input atoms — USDC for a buy, token for a sell. */
+  optimalIn: bigint;
+  /** estimated profit (USDC atoms) after the in-protocol fee. */
+  profitUsdc: bigint;
+}
+
+function legExternalArb(
+  leg: "A" | "B",
+  tokenRes: bigint,
+  usdcRes: bigint,
+  fair: number,
+  feeBps: bigint,
+): ExternalArb {
+  const poolPrice = tokenRes > 0n ? Number(usdcRes) / Number(tokenRes) : 0;
+  const base: ExternalArb = { leg, poolPrice, fairPrice: fair, devBps: 0, action: null, optimalIn: 0n, profitUsdc: 0n };
+  if (fair <= 0 || tokenRes <= 0n || usdcRes <= 0n) return base;
+  base.devBps = (poolPrice / fair - 1) * 10_000;
+
+  if (poolPrice < fair) {
+    // protocol cheap → buy token in the pool, sell at `fair` externally.
+    const payoff = (dxUsdc: bigint): bigint => {
+      const tok = getAmountOut(dxUsdc, usdcRes, tokenRes, feeBps);
+      return BigInt(Math.floor(Number(tok) * fair)); // USDC atoms at fair
+    };
+    const { input, profit } = optimalInput(payoff, usdcRes);
+    if (profit <= 0n) return base;
+    return { ...base, action: "buy", optimalIn: input, profitUsdc: profit };
+  }
+  // protocol rich → buy token externally at `fair`, sell it in the pool.
+  const usdcOut = (dTok: bigint): bigint => getAmountOut(dTok, tokenRes, usdcRes, feeBps);
+  const cost = (dTok: bigint): bigint => BigInt(Math.ceil(Number(dTok) * fair));
+  let lo = 0n, hi = tokenRes, best = 0n, bestProfit = -(2n ** 62n);
+  for (let i = 0; i < 200 && hi - lo > 1n; i++) {
+    const m1 = lo + (hi - lo) / 3n, m2 = hi - (hi - lo) / 3n;
+    if (usdcOut(m1) - cost(m1) < usdcOut(m2) - cost(m2)) lo = m1 + 1n;
+    else hi = m2 - 1n;
+  }
+  for (let d = lo; d <= hi; d++) {
+    const p = usdcOut(d) - cost(d);
+    if (p > bestProfit) { bestProfit = p; best = d; }
+  }
+  if (bestProfit <= 0n) return base;
+  return { ...base, action: "sell", optimalIn: best, profitUsdc: bestProfit };
+}
+
+/** Price both legs against caller-supplied fair values (other venue / underlying feed). */
+export function externalGap(
+  r: TriangleReserves,
+  fair: { fairPriceA?: number; fairPriceB?: number },
+  feeBps: bigint = DEFAULT_FEE_BPS,
+): { legA: ExternalArb | null; legB: ExternalArb | null } {
+  return {
+    legA: fair.fairPriceA != null ? legExternalArb("A", r.aqA, r.aqUsdc, fair.fairPriceA, feeBps) : null,
+    legB: fair.fairPriceB != null ? legExternalArb("B", r.bqB, r.bqUsdc, fair.fairPriceB, feeBps) : null,
+  };
+}
+
+export interface CrankExternalGap {
+  noop: CrankNoop | null;
+  plan: RebalancePlan | null;
+  /** reserves after the crank's donation lands. */
+  postReserves: TriangleReserves | null;
+  /** external arb on the post-crank reserves (the deposit→crank→arb number). */
+  legA: ExternalArb | null;
+  legB: ExternalArb | null;
+}
+
+/**
+ * The deposit→crank→arb-external number: simulate the crank, apply its donation,
+ * then price the (now-dislocated) protocol legs against the caller's fair feed.
+ * This is what firing the crank actually opens — externally, not inside the
+ * coherent triangle.
+ */
+export function crankExternalGap(
+  args: CrankSimArgs & { fairPriceA?: number; fairPriceB?: number; feeBps?: bigint },
+): CrankExternalGap {
+  const sim = simulateCrank(args);
+  if (sim.noop || !sim.plan) {
+    return { noop: sim.noop, plan: sim.plan, postReserves: null, legA: null, legB: null };
+  }
+  const post = applyCrankToReserves(args.reserves, sim.plan);
+  const fee = args.feeBps ?? DEFAULT_FEE_BPS;
+  const ext = externalGap(post, { fairPriceA: args.fairPriceA, fairPriceB: args.fairPriceB }, fee);
+  return { noop: null, plan: sim.plan, postReserves: post, legA: ext.legA, legB: ext.legB };
+}
+
 export { WAD };

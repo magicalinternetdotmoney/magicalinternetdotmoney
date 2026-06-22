@@ -43,18 +43,20 @@ Computable on-chain today vs. surfaces that open up as the protocol gets used:
 | --- | --- | --- |
 | **triangle** | riskless cyclic arb across AQ→AB→BQ (or reverse); opens whenever organic flow hits one pool. atomic, bundle-shaped | ✅ `triangleGap` |
 | **crank** | what a receipt-transfer / crank mints (donates) + the loser drop. *donation only — quote untouched, and it's coherent → no arb from a self-fired crank* | ✅ `simulateCrank` / `crankThenTriangleGap` |
-| **peg** | leg pool price vs the true levered target; the protocol can't mark a winner up, so its pool lags — that lag is the load-bearing arb | ⚙️ `pegGap` (bring a feed) |
-| **JIT liquidity** | add one/two legs right before a fat swap, collect its fee, remove | ⚙️ `cpAddLiquidityIx`/`cpRemoveLiquidityIx` |
-| **hook-backrun** | every receipt transfer cranks → backrun any deposit / withdraw | 🔜 v0.2 |
-| **price-crawl timing** | whoever advances the crawl picks when the protocol "sees" price → times the rebalance | 🔜 v0.2 |
-| **cross-venue** | the +Nx leg vs the *same* underlying on Orca / Raydium / Jupiter | 🔜 v0.2 |
-| **launch snipe** | initial triangle liquidity on a freshly created market | 🔜 v0.2 |
-| **buy_burn** | the protocol's flywheel buys + burns — predictable, front/back-runnable | 🔜 v0.2 |
-| **receipt ↔ LP NAV** | receipt is 1:1 with LP; any secondary price ≠ redemption value → mint/redeem arb | 🔜 v0.2 |
+| **peg / external** | leg pool price vs a fair value you bring (another venue, or the underlying-implied −Nx). the protocol can't mark a winner up, so its pool lags | ✅ `pegGap` / `externalGap` (bring a feed) |
+| **post-crank external** | the crank keeps the triangle coherent but shoves the loser's *protocol* price down vs the outside world — the **deposit→crank→arb-external** number, sized | ✅ `crankExternalGap` |
+| **JIT liquidity** | add one/two legs right before a fat swap, collect its fee, remove | ✅ `cpAddLiquidityIx`/`cpRemoveLiquidityIx` |
+| **hook-backrun** | every receipt transfer cranks → backrun any deposit / withdraw | 🔜 |
+| **price-crawl timing** | whoever advances the crawl picks when the protocol "sees" price → times the rebalance | 🔜 |
+| **launch snipe** | initial triangle liquidity on a freshly created market | 🔜 |
+| **buy_burn** | the protocol's flywheel buys + burns — predictable, front/back-runnable | 🔜 |
+| **receipt ↔ LP NAV** | receipt is 1:1 with LP; any secondary price ≠ redemption value → mint/redeem arb | 🔜 |
 
-The three at the top are the on-chain-computable core shipped today; the rest are
-real surfaces this SDK will expose as liquidity (and the opportunities with it)
-arrive.
+The crank is arb-tight *inside* the triangle (`crankThenTriangleGap → 0`), so the
+real edge it creates is **external**: `crankExternalGap` simulates the crank,
+applies the donation, then prices the dislocated legs against your fair feed and
+returns the executable trade + profit. That's the "if/when you fire the crank it
+opens arbs" surface — outside the triangle, where it actually lives.
 
 ## Quick start
 
