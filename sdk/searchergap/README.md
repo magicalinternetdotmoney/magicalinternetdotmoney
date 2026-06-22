@@ -12,9 +12,22 @@ leveraged-synthetic CP-Swap **triangle**:
 A market is three Raydium CP-Swap pools. It's **oracle-free** (`price_X =
 usdc_reserve / token_reserve`) and rebalances by **minting the loser** —
 fired by a Token-2022 receipt-transfer hook. This SDK gives a bot exact,
-BigInt, on-chain-faithful math to find and size the three gaps.
+BigInt, on-chain-faithful math to find and size the gaps.
 
 > Experimental. Unaudited. Mainnet-alpha. Nothing here is financial advice.
+
+## Status — early / pre-liquidity (this is a demo today)
+
+Be straight about where this is: the live markets are **paper-thin and already
+coherent**, so a scan right now finds **$0** — every triangle reports no
+profitable cycle, and the SDK even proves the crank leaves no gap
+(`crankThenTriangleGap → 0`). That's the tool telling the truth, not failing.
+
+**This ships now so it's battle-ready for when liquidity deepens and real
+opportunities emerge** — a fat underlying move, a deeper pool, a burst of
+organic flow. The math is exact and the bundle builders work today; what's
+missing is the liquidity, not the SDK. Treat v0.x as the reference
+implementation of the surface, wired and waiting.
 
 ## Install
 
@@ -22,13 +35,26 @@ BigInt, on-chain-faithful math to find and size the three gaps.
 npm i @magicalinternet/searchergap @solana/web3.js
 ```
 
-## The three gaps
+## The gaps (more than three)
 
-| gap | what it is | needs |
+Computable on-chain today vs. surfaces that open up as the protocol gets used:
+
+| gap | what it is | status |
 | --- | --- | --- |
-| **triangle** | riskless cyclic arb across AQ→AB→BQ (or reverse). Opens whenever organic flow hits one pool. Atomic, bundle-shaped. | on-chain only |
-| **crank** | what a receipt-transfer / crank would **mint** (donate) and the resulting loser-price drop. The rebalance *donates* into the vaults — quote is never touched. | on-chain + Config params |
-| **peg** | leg pool price vs the true levered target. The protocol can't push a winner up, so its pool **lags** — that lag is the load-bearing arb. | your own underlying feed |
+| **triangle** | riskless cyclic arb across AQ→AB→BQ (or reverse); opens whenever organic flow hits one pool. atomic, bundle-shaped | ✅ `triangleGap` |
+| **crank** | what a receipt-transfer / crank mints (donates) + the loser drop. *donation only — quote untouched, and it's coherent → no arb from a self-fired crank* | ✅ `simulateCrank` / `crankThenTriangleGap` |
+| **peg** | leg pool price vs the true levered target; the protocol can't mark a winner up, so its pool lags — that lag is the load-bearing arb | ⚙️ `pegGap` (bring a feed) |
+| **JIT liquidity** | add one/two legs right before a fat swap, collect its fee, remove | ⚙️ `cpAddLiquidityIx`/`cpRemoveLiquidityIx` |
+| **hook-backrun** | every receipt transfer cranks → backrun any deposit / withdraw | 🔜 v0.2 |
+| **price-crawl timing** | whoever advances the crawl picks when the protocol "sees" price → times the rebalance | 🔜 v0.2 |
+| **cross-venue** | the +Nx leg vs the *same* underlying on Orca / Raydium / Jupiter | 🔜 v0.2 |
+| **launch snipe** | initial triangle liquidity on a freshly created market | 🔜 v0.2 |
+| **buy_burn** | the protocol's flywheel buys + burns — predictable, front/back-runnable | 🔜 v0.2 |
+| **receipt ↔ LP NAV** | receipt is 1:1 with LP; any secondary price ≠ redemption value → mint/redeem arb | 🔜 v0.2 |
+
+The three at the top are the on-chain-computable core shipped today; the rest are
+real surfaces this SDK will expose as liquidity (and the opportunities with it)
+arrive.
 
 ## Quick start
 
