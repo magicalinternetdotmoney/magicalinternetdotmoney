@@ -4,6 +4,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY server.js txbuild.js fluxbeam.js fluxbeam-lut.js patch-metadata.js backfill.js init-hook-metas.js ./
+COPY leaderboard ./leaderboard
 COPY public ./public
 ENV PORT=8080 NODE_ENV=production
 EXPOSE 8080
