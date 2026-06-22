@@ -3,9 +3,10 @@
 app = "mim-crank-bot"
 primary_region = "iad"
 
-# Deploy from repo root: fly deploy -c crank-bot/fly.toml
+# Deploy: fly deploy -c crank-bot/fly.toml (from repo root)
 [build]
-  dockerfile = "crank-bot/Dockerfile"
+  dockerfile = "Dockerfile"
+  build-context = ".."
 
 [env]
   CRANK_POLL_MS = "60000"

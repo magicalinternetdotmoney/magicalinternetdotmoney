@@ -59,8 +59,10 @@ function usage() {
 }
 
 function loadKeeper(cfgKeypair?: string): Keypair {
+  const inline = process.env.KEYPAIR_JSON;
+  if (inline) return Keypair.fromSecretKey(new Uint8Array(JSON.parse(inline)));
   const path = arg("keypair") || process.env.KEYPAIR || cfgKeypair;
-  if (!path) throw new Error("--live needs --keypair <path>, $KEYPAIR, or a keypair_path in your solana config");
+  if (!path) throw new Error("--live needs --keypair <path>, $KEYPAIR, $KEYPAIR_JSON, or a keypair_path in your solana config");
   return Keypair.fromSecretKey(new Uint8Array(JSON.parse(readFileSync(expandTilde(path), "utf8"))));
 }
 
