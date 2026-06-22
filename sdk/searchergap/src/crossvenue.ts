@@ -142,6 +142,8 @@ export async function buildCrankArbBundle(args: {
   minProfitUsdc: bigint;
   /** crank leverage (0 ⇒ config l_max). */
   userLeverageBps?: bigint;
+  /** force the protocol-buy size (atoms) — for size search; skips the auto gate. */
+  amountInUsdc?: bigint;
   jupiter?: JupiterOpts;
   tipLamports?: number;
 }): Promise<CrankArbBundle> {
@@ -170,9 +172,10 @@ export async function buildCrankArbBundle(args: {
   const fair = await jupiterFairVsUsdc(legMint, m.quoteMint, probe, args.jupiter);
   const ext = externalGap(post, loser === "A" ? { fairPriceA: fair } : { fairPriceB: fair }, m.tradeFeeBps);
   const arbLeg = loser === "A" ? ext.legA : ext.legB;
-  if (!arbLeg || arbLeg.action !== "buy" || arbLeg.profitUsdc < minProfitUsdc) return { noop: "no-edge" };
-
-  const amountInUsdc = arbLeg.optimalIn;
+  // forced size (size search) bypasses the auto profit-gate; sim decides.
+  const amountInUsdc = args.amountInUsdc ?? (arbLeg && arbLeg.action === "buy" ? arbLeg.optimalIn : 0n);
+  if (amountInUsdc <= 0n) return { noop: "no-edge" };
+  if (!args.amountInUsdc && (!arbLeg || arbLeg.action !== "buy" || arbLeg.profitUsdc < minProfitUsdc)) return { noop: "no-edge" };
 
   // 3. protocol buy USDC→loser on the post-crank pool; min_out = expected − slip.
   const expLoser = getAmountOut(amountInUsdc, postUsdcRes, postTokenRes, m.tradeFeeBps);

@@ -1,6 +1,6 @@
 {
   "name": "@magicalinternet/searchergap",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Searcher SDK for Magical Internet Money — compute the triangle / peg / crank arbitrage gaps on the leveraged-synthetic CP-Swap triangle. Faithful BigInt port of the on-chain rebalance math.",
   "keywords": [
     "solana",
