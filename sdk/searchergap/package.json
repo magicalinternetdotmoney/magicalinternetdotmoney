@@ -1,0 +1,53 @@
+{
+  "name": "@magicalinternet/searchergap",
+  "version": "0.1.0",
+  "description": "Searcher SDK for Magical Internet Money — compute the triangle / peg / crank arbitrage gaps on the leveraged-synthetic CP-Swap triangle. Faithful BigInt port of the on-chain rebalance math.",
+  "keywords": [
+    "solana",
+    "mev",
+    "searcher",
+    "arbitrage",
+    "jito",
+    "raydium",
+    "cp-swap",
+    "leverage",
+    "magicalinternet"
+  ],
+  "license": "MIT",
+  "author": "magicalinternetmoney <magicalinternet@proton.me>",
+  "homepage": "https://magicalinternet.money",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/magicalinternetdotmoney/magicalinternetdotmoney.git",
+    "directory": "sdk/searchergap"
+  },
+  "type": "commonjs",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "bin": {
+    "searchergap": "dist/bin/searchergap.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "scan": "node dist/bin/searchergap.js scan"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.95.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "typescript": "^5.9.3"
+  }
+}
