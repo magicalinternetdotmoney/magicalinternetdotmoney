@@ -188,6 +188,28 @@ coherent). `applyLegBuyToReserves(...)` shows an organic leg-buy *does* leave a
 real gap. So: don't waste a bundle self-firing the crank to arb it — there's
 nothing there. Hunt organic flow and the peg lag.
 
+## Run it (the profit loop)
+
+A complete searcher loop lives in
+[`examples/searcher-loop.mjs`](./examples/searcher-loop.mjs): scan → find a
+profit-guarded gap → build the bundle. **Dry-run by default** (build + simulate,
+never sends); `--live` signs with your keeper and sends — *you* run that, the
+SDK never signs.
+
+```bash
+# safe: scan + build + SIMULATE, never sends
+RPC_URL=https://… node searcher-loop.mjs
+
+# live: signs with KEYPAIR and sends (you run this)
+RPC_URL=https://… KEYPAIR=~/keeper.json MIN_PROFIT_USDC_ATOMS=50000 node searcher-loop.mjs --live
+```
+
+The arb's final hop is profit-guarded (`min_out = amountIn + minProfit`), so a
+live send **reverts unless it clears `MIN_PROFIT`** — you never eat a bad fill.
+In production, submit as a Jito bundle (atomic, no revert cost). Today it prints
+"no gaps" (thin, coherent markets) — that's the honest state; the loop is wired
+for when opportunities arrive.
+
 ## API
 
 - `discoverMarkets(connection, programId?)` → `Market[]`
