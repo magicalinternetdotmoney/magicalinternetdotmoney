@@ -6,11 +6,12 @@
  */
 
 import { Connection, Keypair, VersionedTransaction } from "@solana/web3.js";
-import { discoverMarkets, readTriangle, type Market } from "./markets";
+import { discoverMarkets, readTriangle, readConfig, readCrawlAggregate, type Market } from "./markets";
 import { triangleGap, externalGap } from "./gap";
-import { loadAmmConfigs, buildTriangleArbIxs, jitoTipIx, buildUnsignedTx } from "./executor";
+import { loadAmmConfigs, buildTriangleArbIxs, jitoTipIx, buildUnsignedTx, priceCrawlPda } from "./executor";
 import { jupiterFairVsUsdc, type JupiterOpts } from "./jupiter";
-import { buildCrossVenueArb, buildCrankArbBundle } from "./crossvenue";
+import { buildCrossVenueArb, buildCrankArbBundle, buildCrankCaptureBundle } from "./crossvenue";
+import { planTwoPoolFromOracleWad, Side } from "./leverage-math";
 
 export interface LoopOpts {
   /** minimum USDC profit (atoms) to act on. default 50_000 ($0.05). */
@@ -101,6 +102,38 @@ export async function scanOnce(connection: Connection, opts: LoopOpts = {}): Pro
     try { reserves = await readTriangle(connection, m); } catch { log(`· ${id}: unreadable, skip`); continue; }
     const gap = triangleGap(reserves, m.tradeFeeBps);
     log(`· ${id}  tvl≈$${((Number(reserves.aqUsdc) + Number(reserves.bqUsdc)) / 1e6).toFixed(0)}  triangle:${gap.direction ? "$" + (Number(gap.profitUsdc) / 1e6).toFixed(4) + " " + gap.direction : "coherent"}`);
+
+    // WITHIN-PROTOCOL crank capture: the oracle-driven crank (oracleKind=2) fires
+    // off the UNDERLYING move. Sell loser → crank (mints loser, price drops) → buy
+    // back cheap, profit-guarded, using inventory you hold. No external venue.
+    if (keeper) {
+      try {
+        const cfg = await readConfig(connection, m);
+        const oracleNow = await readCrawlAggregate(connection, priceCrawlPda(m.config));
+        const plan = oracleNow > 0n ? planTwoPoolFromOracleWad({
+          oracleLastWad: cfg.oraclePriceLastWad, oracleNowWad: oracleNow,
+          reserveAInPair: reserves.abA, reserveBInPair: reserves.abB,
+          reserveAInAUsdc: reserves.aqA, reserveBInBUsdc: reserves.bqB,
+          supplyA: reserves.supplyA, supplyB: reserves.supplyB,
+          userLeverageBps: 0n, lMinBps: cfg.lMinBps, lMaxBps: cfg.lMaxBps,
+          maxMintBps: cfg.maxMintBps, breakerBps: cfg.breakerBps,
+        }) : null;
+        if (plan && plan.amountUsdcPool > 0n) {
+          const loser = plan.side === Side.A ? "A" : "B";
+          const loserRes = loser === "A" ? reserves.aqA : reserves.bqB;
+          log(`CRANK-CAP? ${id} loser${loser} oracleMove=${plan.absReturnBps}bps → sell→crank→buyback`);
+          const r = await searchAndSend(
+            connection, opts, log, `crank-cap ${loser}`,
+            async (sold) => (await buildCrankCaptureBundle({
+              connection, owner: keeper.publicKey, market: m, soldAtoms: sold,
+              minProfitUsdc: minProfit, tipLamports: opts.tipLamports,
+            })).tx ?? null,
+            loserRes / 40n, loserRes / 4000n,
+          );
+          if (r.ok) hits.push({ market: m.config.toBase58(), direction: `crank-cap:${loser}`, inputUsdc: r.amount ?? 0n, profitUsdc: minProfit, profitBps: Number(plan.absReturnBps), txid: r.txid });
+        }
+      } catch (e) { log(`  crank-cap skipped: ${(e as Error).message.slice(0, 80)}`); }
+    }
 
     // cross-venue surface: each leg's protocol price vs Jupiter's best route.
     if (opts.jupiter?.enabled) {

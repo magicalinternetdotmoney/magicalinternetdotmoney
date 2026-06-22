@@ -219,3 +219,47 @@ export function planFromMarket(args: {
   const amountUsdcPool = loserMintAmount(usdcPoolReserve, sizedBps, leverageBps, args.maxMintBps, 0n);
   return { side, amountPairPool, amountUsdcPool, leverageBps, absReturnBps: absBps, breakerTripped: false };
 }
+
+/**
+ * The ORACLE-CRAWL crank path (what `run_rebalance` actually does for
+ * oracleKind=2): the loser follows the UNDERLYING's move (oracle_last → oracle_now),
+ * NOT the pool ratio. Underlying fell → long side A is the loser; rose → B.
+ * This is the path my earlier sim was missing.
+ */
+export function planTwoPoolFromOracleWad(args: {
+  oracleLastWad: bigint;
+  oracleNowWad: bigint;
+  reserveAInPair: bigint;
+  reserveBInPair: bigint;
+  reserveAInAUsdc: bigint;
+  reserveBInBUsdc: bigint;
+  supplyA: bigint;
+  supplyB: bigint;
+  userLeverageBps: bigint;
+  lMinBps: bigint;
+  lMaxBps: bigint;
+  maxMintBps: bigint;
+  breakerBps: bigint;
+}): RebalancePlan | null {
+  const r = ratioReturnBps(args.oracleLastWad, args.oracleNowWad);
+  if (r === null || r === 0n) return null;
+  const side = r < 0n ? Side.A : Side.B;
+  const absBps = r < 0n ? -r : r;
+  const sizedBps = clampCrankMoveBps(absBps);
+
+  const pairReserve = side === Side.A ? args.reserveAInPair : args.reserveBInPair;
+  const usdcPoolReserve = side === Side.A ? args.reserveAInAUsdc : args.reserveBInBUsdc;
+  const supply = side === Side.A ? args.supplyA : args.supplyB;
+
+  const pick = args.userLeverageBps === 0n ? args.lMaxBps : args.userLeverageBps;
+  const user = clampLeverageBps(pick, args.lMinBps, args.lMaxBps);
+  const elastic = elasticLeverageBps(args.lMinBps, args.lMaxBps, pairReserve, supply);
+  const leverageBps = user < elastic ? user : elastic;
+
+  if (args.breakerBps !== 0n && absBps >= args.breakerBps) {
+    return { side, amountPairPool: 0n, amountUsdcPool: 0n, leverageBps, absReturnBps: absBps, breakerTripped: true };
+  }
+  const amountPairPool = loserMintAmount(pairReserve, sizedBps, leverageBps, args.maxMintBps, 0n);
+  const amountUsdcPool = loserMintAmount(usdcPoolReserve, sizedBps, leverageBps, args.maxMintBps, 0n);
+  return { side, amountPairPool, amountUsdcPool, leverageBps, absReturnBps: absBps, breakerTripped: false };
+}

@@ -22,10 +22,10 @@ import {
 } from "@solana/web3.js";
 import { cpSwapBaseInputIx, jitoTipIx, loadAmmConfig, buildCrankIx, priceCrawlPda, computeBudgetIxs, type SwapLeg } from "./executor";
 import { jupiterQuote, jupiterSwapInstructions, fetchAddressLookupTables, jupiterFairVsUsdc, type JupiterOpts } from "./jupiter";
-import { readTriangle, readConfig, type Market } from "./markets";
+import { readTriangle, readConfig, readCrawlAggregate, type Market } from "./markets";
 import { simulateCrank, applyCrankToReserves, externalGap } from "./gap";
 import { getAmountOut } from "./cpswap";
-import { Side } from "./leverage-math";
+import { Side, planTwoPoolFromOracleWad } from "./leverage-math";
 
 export interface CrossVenueArb {
   /** unsigned, ALT-compressed. sign + send (Jito bundle recommended). */
@@ -215,5 +215,103 @@ export async function buildCrankArbBundle(args: {
     amountInUsdc,
     jupiterMinOutUsdc: jup.minOut,
     estProfitUsdc: jup.minOut - amountInUsdc,
+  };
+}
+
+export interface CrankCapture {
+  noop: "flat" | "breaker" | "paused" | "no-mint" | null;
+  tx?: VersionedTransaction;
+  loser?: "A" | "B";
+  /** loser atoms sold before the crank (and bought back after). */
+  soldAtoms?: bigint;
+  /** USDC the sell guarantees (atoms) — sets the buy-back budget. */
+  sellMinUsdc?: bigint;
+  mintedIntoUsdcPool?: bigint;
+  oracleMoveBps?: bigint;
+}
+
+/**
+ * WITHIN-PROTOCOL manufacture-and-capture — no external venue needed.
+ *
+ *   [sell `soldAtoms` of the loser → USDC]   (at the stale, pre-crank price)
+ *   [crank]                                  (oracle-driven: mints the loser, price drops)
+ *   [buy the loser back → USDC spent ≤ sellMin − minProfit, min_out = soldAtoms]
+ *
+ * You end FLAT on the loser and UP `minProfit` USDC, or the tx reverts. Uses the
+ * loser inventory you already hold. The crank reads the UNDERLYING oracle
+ * (oracleKind=2), so it fires off the real move my pool-ratio sim was missing.
+ */
+export async function buildCrankCaptureBundle(args: {
+  connection: Connection;
+  owner: PublicKey;
+  market: Market;
+  /** loser atoms to sell before the crank (size-search this). */
+  soldAtoms: bigint;
+  minProfitUsdc: bigint;
+  userLeverageBps?: bigint;
+  tipLamports?: number;
+}): Promise<CrankCapture> {
+  const { connection, owner, market: m, soldAtoms, minProfitUsdc } = args;
+  const crawl = priceCrawlPda(m.config);
+  const [reserves, cfg, oracleNow] = await Promise.all([
+    readTriangle(connection, m),
+    readConfig(connection, m),
+    readCrawlAggregate(connection, crawl),
+  ]);
+  if (cfg.paused) return { noop: "paused" };
+
+  const plan = planTwoPoolFromOracleWad({
+    oracleLastWad: cfg.oraclePriceLastWad,
+    oracleNowWad: oracleNow,
+    reserveAInPair: reserves.abA, reserveBInPair: reserves.abB,
+    reserveAInAUsdc: reserves.aqA, reserveBInBUsdc: reserves.bqB,
+    supplyA: reserves.supplyA, supplyB: reserves.supplyB,
+    userLeverageBps: args.userLeverageBps ?? 0n,
+    lMinBps: cfg.lMinBps, lMaxBps: cfg.lMaxBps, maxMintBps: cfg.maxMintBps, breakerBps: cfg.breakerBps,
+  });
+  if (!plan) return { noop: "flat" };
+  if (plan.breakerTripped) return { noop: "breaker" };
+  if (plan.amountUsdcPool <= 0n) return { noop: "no-mint" };
+
+  const loser: "A" | "B" = plan.side === Side.A ? "A" : "B";
+  const legMint = loser === "A" ? m.mintA : m.mintB;
+  const pool = loser === "A" ? m.pools.aq : m.pools.bq;
+  const tokRes = loser === "A" ? reserves.aqA : reserves.bqB;
+  const usdcRes = loser === "A" ? reserves.aqUsdc : reserves.bqUsdc;
+  const ammConfig = await loadAmmConfig(connection, pool.pool);
+
+  // sell loser → USDC (exact-in soldAtoms). guaranteed USDC out on PRE reserves.
+  const sellMinUsdc = getAmountOut(soldAtoms, tokRes, usdcRes, m.tradeFeeBps);
+  if (sellMinUsdc <= minProfitUsdc) return { noop: "no-mint" };
+  const sellLeg: SwapLeg = {
+    pool: pool.pool, ammConfig, inputMint: legMint, outputMint: m.quoteMint,
+    inputVault: pool.vaultBase, outputVault: pool.vaultQuote, observation: pool.observation,
+  };
+  const sellIx = cpSwapBaseInputIx({ owner, amountIn: soldAtoms, minOut: (sellMinUsdc * 999n) / 1000n, leg: sellLeg });
+
+  // crank (oracle path → mints the loser into the pools).
+  const crankIx = buildCrankIx({ market: m, leverageBps: args.userLeverageBps ?? 0n, priceCrawl: crawl });
+
+  // buy loser back: spend (sellMin − minProfit) USDC, REQUIRE soldAtoms back. The guard.
+  const buyBudget = (sellMinUsdc * 999n) / 1000n - minProfitUsdc;
+  if (buyBudget <= 0n) return { noop: "no-mint" };
+  const buyLeg: SwapLeg = {
+    pool: pool.pool, ammConfig, inputMint: m.quoteMint, outputMint: legMint,
+    inputVault: pool.vaultQuote, outputVault: pool.vaultBase, observation: pool.observation,
+  };
+  const buyIx = cpSwapBaseInputIx({ owner, amountIn: buyBudget, minOut: soldAtoms, leg: buyLeg });
+
+  const ixs: TransactionInstruction[] = [
+    ...computeBudgetIxs(),
+    sellIx,
+    crankIx,
+    buyIx,
+    jitoTipIx(owner, args.tipLamports ?? 10_000),
+  ];
+  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const msg = new TransactionMessage({ payerKey: owner, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message();
+  return {
+    noop: null, tx: new VersionedTransaction(msg), loser, soldAtoms,
+    sellMinUsdc, mintedIntoUsdcPool: plan.amountUsdcPool, oracleMoveBps: plan.absReturnBps,
   };
 }

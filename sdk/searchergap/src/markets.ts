@@ -184,6 +184,18 @@ export async function readConfig(connection: Connection, m: Market): Promise<Mar
   };
 }
 
+/** Oracle "now": the price-crawl aggregate (median underlying price), offset 43 (u128).
+ *  Pass the price_crawl PDA (["price_crawl", config]). Returns 0n if unreadable. */
+export async function readCrawlAggregate(connection: Connection, priceCrawl: PublicKey): Promise<bigint> {
+  try {
+    const info = await connection.getAccountInfo(priceCrawl, "confirmed");
+    if (!info || info.data.length < 43 + 16) return 0n;
+    return rdU128LE(info.data as Buffer, 43);
+  } catch {
+    return 0n;
+  }
+}
+
 /** Read all six vault balances + the two synth supplies for a market. */
 export async function readTriangle(connection: Connection, m: Market): Promise<TriangleReserves> {
   const keys = [
