@@ -26,6 +26,7 @@ export * from "./gap";
 export * from "./executor";
 export * from "./loop";
 export * from "./jupiter";
+export * from "./crossvenue";
 
 export interface MarketScan {
   market: Market;

@@ -10,7 +10,7 @@
  * for Ultra (higher limits). Uses global fetch (Node 18+).
  */
 
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, TransactionInstruction, AddressLookupTableAccount, type Connection } from "@solana/web3.js";
 
 export const JUP_LITE_BASE = "https://lite-api.jup.ag/swap/v1";
 export const JUP_PRO_BASE = "https://api.jup.ag/swap/v1";
@@ -73,4 +73,77 @@ export async function jupiterFairVsUsdc(
   if (probeAtoms <= 0n) return 0;
   const q = await jupiterQuote(mint, usdcMint, probeAtoms, opts);
   return q.price;
+}
+
+function deserializeIx(ix: any): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: new PublicKey(ix.programId),
+    keys: ix.accounts.map((a: any) => ({
+      pubkey: new PublicKey(a.pubkey),
+      isSigner: a.isSigner,
+      isWritable: a.isWritable,
+    })),
+    data: Buffer.from(ix.data, "base64"),
+  });
+}
+
+export interface JupiterSwapIxs {
+  computeBudget: TransactionInstruction[];
+  setup: TransactionInstruction[];
+  swap: TransactionInstruction;
+  cleanup?: TransactionInstruction;
+  /** min output the Jupiter swap guarantees (atoms) — quote.otherAmountThreshold. */
+  minOut: bigint;
+  /** expected output (atoms) — quote.outAmount. */
+  expectedOut: bigint;
+  addressLookupTableAddresses: string[];
+}
+
+/**
+ * Fetch Jupiter swap instructions for a quote (from `jupiterQuote(...).raw`) so
+ * the swap can be composed INTO your own atomic tx alongside a protocol swap.
+ */
+export async function jupiterSwapInstructions(
+  quoteRaw: any,
+  userPublicKey: string | PublicKey,
+  opts: JupiterOpts = {},
+): Promise<JupiterSwapIxs> {
+  const base = opts.baseUrl || (opts.apiKey ? JUP_PRO_BASE : JUP_LITE_BASE);
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (opts.apiKey) headers["x-api-key"] = opts.apiKey;
+  const res = await fetch(`${base}/swap-instructions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      quoteResponse: quoteRaw,
+      userPublicKey: asMint(userPublicKey),
+      wrapAndUnwrapSol: true,
+      dynamicComputeUnitLimit: true,
+    }),
+  });
+  if (!res.ok) throw new Error(`jupiter swap-ix ${res.status} ${await res.text().catch(() => "")}`.slice(0, 180));
+  const j: any = await res.json();
+  if (j.error) throw new Error("jupiter swap-ix: " + j.error);
+  return {
+    computeBudget: (j.computeBudgetInstructions || []).map(deserializeIx),
+    setup: (j.setupInstructions || []).map(deserializeIx),
+    swap: deserializeIx(j.swapInstruction),
+    cleanup: j.cleanupInstruction ? deserializeIx(j.cleanupInstruction) : undefined,
+    minOut: BigInt(quoteRaw.otherAmountThreshold ?? quoteRaw.outAmount),
+    expectedOut: BigInt(quoteRaw.outAmount),
+    addressLookupTableAddresses: j.addressLookupTableAddresses || [],
+  };
+}
+
+/** Load the Address Lookup Table accounts Jupiter references. */
+export async function fetchAddressLookupTables(
+  connection: Connection,
+  addresses: string[],
+): Promise<AddressLookupTableAccount[]> {
+  const out: AddressLookupTableAccount[] = [];
+  for (const a of addresses) {
+    const r = await connection.getAddressLookupTable(new PublicKey(a));
+    if (r.value) out.push(r.value);
+  }
+  return out;
 }

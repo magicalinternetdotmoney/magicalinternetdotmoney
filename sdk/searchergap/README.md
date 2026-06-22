@@ -44,7 +44,7 @@ Computable on-chain today vs. surfaces that open up as the protocol gets used:
 | **triangle** | riskless cyclic arb across AQ→AB→BQ (or reverse); opens whenever organic flow hits one pool. atomic, bundle-shaped | ✅ `triangleGap` |
 | **crank** | what a receipt-transfer / crank mints (donates) + the loser drop. *donation only — quote untouched, and it's coherent → no arb from a self-fired crank* | ✅ `simulateCrank` / `crankThenTriangleGap` |
 | **peg / external** | leg pool price vs a fair value you bring (another venue, or the underlying-implied −Nx). the protocol can't mark a winner up, so its pool lags | ✅ `pegGap` / `externalGap` (bring a feed) |
-| **post-crank external** | the crank keeps the triangle coherent but shoves the loser's *protocol* price down vs the outside world — the **deposit→crank→arb-external** number, sized | ✅ `crankExternalGap` |
+| **post-crank external** | the crank keeps the triangle coherent but shoves the loser's *protocol* price down vs the outside world — **manufacture-and-capture**: fire the crank, buy the now-cheap loser in-protocol, sell on Jupiter, atomic + guarded, sized off the *deterministic* post-crank reserves (real on-chain `last_ratio` via `readConfig`) | ✅ `crankExternalGap` / `buildCrankArbBundle` |
 | **JIT liquidity** | add one/two legs right before a fat swap, collect its fee, remove | ✅ `cpAddLiquidityIx`/`cpRemoveLiquidityIx` |
 | **hook-backrun** | every receipt transfer cranks → backrun any deposit / withdraw | 🔜 |
 | **price-crawl timing** | whoever advances the crawl picks when the protocol "sees" price → times the rebalance | 🔜 |

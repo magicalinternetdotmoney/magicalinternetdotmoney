@@ -148,6 +148,42 @@ export interface TriangleReserves {
   supplyB: bigint;
 }
 
+// Config field offsets (config.rs).
+const C_PAUSED = 35, C_L_MIN = 260, C_L_MAX = 268, C_MAX_MINT = 276, C_BREAKER = 284, C_LAST_RATIO = 292, C_ORACLE_KIND = 414, C_ORACLE_PRICE_LAST = 415;
+
+function rdU128LE(d: Buffer, o: number): bigint {
+  return d.readBigUInt64LE(o) | (d.readBigUInt64LE(o + 8) << 64n);
+}
+
+export interface MarketConfig {
+  paused: boolean;
+  lMinBps: bigint;
+  lMaxBps: bigint;
+  maxMintBps: bigint;
+  breakerBps: bigint;
+  /** ratio recorded at the last rebalance — the real input to a crank sim. */
+  lastRatioWad: bigint;
+  oracleKind: number;
+  oraclePriceLastWad: bigint;
+}
+
+/** Read the live Config (real last_ratio + leverage band) so a crank sim isn't fabricated. */
+export async function readConfig(connection: Connection, m: Market): Promise<MarketConfig> {
+  const info = await connection.getAccountInfo(m.config, "confirmed");
+  if (!info) throw new Error(`config ${m.config.toBase58()} not found`);
+  const d = info.data as Buffer;
+  return {
+    paused: d[C_PAUSED] !== 0,
+    lMinBps: d.readBigUInt64LE(C_L_MIN),
+    lMaxBps: d.readBigUInt64LE(C_L_MAX),
+    maxMintBps: d.readBigUInt64LE(C_MAX_MINT),
+    breakerBps: d.readBigUInt64LE(C_BREAKER),
+    lastRatioWad: rdU128LE(d, C_LAST_RATIO),
+    oracleKind: d.length > C_ORACLE_KIND ? d[C_ORACLE_KIND] : 0,
+    oraclePriceLastWad: d.length >= C_ORACLE_PRICE_LAST + 16 ? rdU128LE(d, C_ORACLE_PRICE_LAST) : 0n,
+  };
+}
+
 /** Read all six vault balances + the two synth supplies for a market. */
 export async function readTriangle(connection: Connection, m: Market): Promise<TriangleReserves> {
   const keys = [

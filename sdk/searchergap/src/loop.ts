@@ -10,6 +10,7 @@ import { discoverMarkets, readTriangle, type Market } from "./markets";
 import { triangleGap, externalGap } from "./gap";
 import { loadAmmConfigs, buildTriangleArbIxs, jitoTipIx, buildUnsignedTx } from "./executor";
 import { jupiterFairVsUsdc, type JupiterOpts } from "./jupiter";
+import { buildCrossVenueArb, buildCrankArbBundle } from "./crossvenue";
 
 export interface LoopOpts {
   /** minimum USDC profit (atoms) to act on. default 50_000 ($0.05). */
@@ -65,16 +66,66 @@ export async function scanOnce(connection: Connection, opts: LoopOpts = {}): Pro
           jupiterFairVsUsdc(m.mintB, m.quoteMint, probe(reserves.bqB), opts.jupiter).catch(() => 0),
         ]);
         const ext = externalGap(reserves, { fairPriceA: fairA || undefined, fairPriceB: fairB || undefined }, m.tradeFeeBps);
+        const fairFor = (l: "A" | "B") => (l === "A" ? fairA : fairB);
         for (const leg of [ext.legA, ext.legB]) {
-          if (leg?.action && leg.profitUsdc >= minProfit) {
-            log(`XVENUE ${m.config.toBase58().slice(0, 8)} leg${leg.leg} ${leg.action} ${leg.devBps.toFixed(0)}bps vs Jupiter → est ${usd(leg.profitUsdc)}`);
-            hits.push({
-              market: m.config.toBase58(), direction: `xvenue:${leg.leg}:${leg.action}`,
-              inputUsdc: leg.optimalIn, profitUsdc: leg.profitUsdc, profitBps: Math.round(leg.devBps),
-            });
+          if (!leg?.action || leg.profitUsdc < minProfit) continue;
+          log(`XVENUE ${m.config.toBase58().slice(0, 8)} leg${leg.leg} ${leg.action} ${leg.devBps.toFixed(0)}bps vs Jupiter → est ${usd(leg.profitUsdc)}`);
+          const hit: ScanHit = {
+            market: m.config.toBase58(), direction: `xvenue:${leg.leg}:${leg.action}`,
+            inputUsdc: leg.optimalIn, profitUsdc: leg.profitUsdc, profitBps: Math.round(leg.devBps),
+          };
+          // SELL side is the hard-guarded one: Jupiter buy → protocol sell (last).
+          // Build the atomic cross-venue bundle when we have an owner to build for.
+          if (leg.action === "sell" && keeper) {
+            try {
+              const fair = fairFor(leg.leg);
+              const amountInUsdc = BigInt(Math.max(1, Math.floor(Number(leg.optimalIn) * fair)));
+              const arb = await buildCrossVenueArb({
+                connection, owner: keeper.publicKey, market: m, leg: leg.leg,
+                amountInUsdc, minProfitUsdc: minProfit, jupiter: opts.jupiter, tipLamports: opts.tipLamports,
+              });
+              if (opts.live) {
+                arb.tx.sign([keeper]);
+                hit.txid = await connection.sendRawTransaction(arb.tx.serialize());
+                log(`  xvenue sent: ${hit.txid}`);
+              } else {
+                const sim = await connection.simulateTransaction(arb.tx, { sigVerify: false, replaceRecentBlockhash: true });
+                hit.simErr = sim.value.err;
+                log(`  xvenue dry-run sim err: ${JSON.stringify(sim.value.err)}`);
+              }
+            } catch (e) { log(`  xvenue build skipped: ${(e as Error).message}`); }
           }
+          hits.push(hit);
         }
       } catch { /* jup rate-limit / no route — skip this tick */ }
+    }
+
+    // manufacture-and-capture: fire the crank + arb the deterministic post-crank
+    // state vs Jupiter, one bundle (needs a keeper to build for + Jupiter).
+    if (keeper && opts.jupiter?.enabled) {
+      try {
+        const ca = await buildCrankArbBundle({
+          connection, owner: keeper.publicKey, market: m,
+          minProfitUsdc: minProfit, jupiter: opts.jupiter, tipLamports: opts.tipLamports,
+        });
+        if (!ca.noop && ca.tx) {
+          log(`CRANK-ARB ${m.config.toBase58().slice(0, 8)} loser${ca.loser} in=${usd(ca.amountInUsdc!)} → est ${usd(ca.estProfitUsdc!)}`);
+          const hit: ScanHit = {
+            market: m.config.toBase58(), direction: `crank-arb:${ca.loser}`,
+            inputUsdc: ca.amountInUsdc!, profitUsdc: ca.estProfitUsdc!, profitBps: 0,
+          };
+          if (opts.live) {
+            ca.tx.sign([keeper]);
+            hit.txid = await connection.sendRawTransaction(ca.tx.serialize());
+            log(`  crank-arb sent: ${hit.txid}`);
+          } else {
+            const sim = await connection.simulateTransaction(ca.tx, { sigVerify: false, replaceRecentBlockhash: true });
+            hit.simErr = sim.value.err;
+            log(`  crank-arb sim err: ${JSON.stringify(sim.value.err)}`);
+          }
+          hits.push(hit);
+        }
+      } catch { /* skip this market this tick */ }
     }
 
     const gap = triangleGap(reserves, m.tradeFeeBps);
