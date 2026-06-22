@@ -199,7 +199,17 @@ npx @magicalinternet/searchergap run --rpc https://your-rpc
 
 # LIVE: signs with your keeper + sends. you run this; the SDK only signs when you ask.
 npx @magicalinternet/searchergap run --live --keypair ~/keeper.json --min-profit 50000 --rpc https://your-rpc
+
+# + hunt the CROSS-VENUE surface (price each leg vs Jupiter's best route)
+npx @magicalinternet/searchergap run --jup                 # free Lite (rate-limited)
+npx @magicalinternet/searchergap run --jup --jup-key <key> # Ultra — get one free at https://dev.jup.ag
 ```
+
+`--rpc` and `--keypair` fall back to your **solana config**
+(`~/.config/solana/cli/config.yml`) when omitted. `--jup` adds the external
+feed: it prices each leg against Jupiter and flags any divergence
+(`XVENUE … sell 1118bps vs Jupiter → est $…`) — the cross-venue arb a single
+pool can't see.
 
 Or drive it from code:
 

@@ -15,6 +15,23 @@ function arg(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+function expandTilde(p: string): string {
+  return p.startsWith("~") ? (process.env.HOME || "") + p.slice(1) : p;
+}
+
+/** Read the Solana CLI config (~/.config/solana/cli/config.yml) for defaults. */
+function solanaCliConfig(): { rpc?: string; keypair?: string } {
+  try {
+    const path = process.env.HOME ? `${process.env.HOME}/.config/solana/cli/config.yml` : "";
+    const txt = readFileSync(path, "utf8");
+    const rpc = txt.match(/^\s*json_rpc_url:\s*"?([^"\n]+?)"?\s*$/m)?.[1]?.trim();
+    const keypair = txt.match(/^\s*keypair_path:\s*"?([^"\n]+?)"?\s*$/m)?.[1]?.trim();
+    return { rpc, keypair };
+  } catch {
+    return {};
+  }
+}
+
 function fmtUsdc(atoms: bigint): string {
   const neg = atoms < 0n;
   const a = neg ? -atoms : atoms;
@@ -26,32 +43,47 @@ function fmtUsdc(atoms: bigint): string {
 function usage() {
   console.log(`usage:
   searchergap scan  [--rpc <url>] [--json]
-  searchergap run   [--rpc <url>] [--live] [--keypair <path>] [--min-profit <usdc-atoms>] [--poll <ms>] [--tip <lamports>]
+  searchergap run   [--rpc <url>] [--live] [--keypair <path>] [--min-profit <usdc-atoms>] [--poll <ms>] [--tip <lamports>] [--jup] [--jup-key <key>]
 
   run is DRY-RUN by default (scan + build + simulate, never sends).
   --live signs with --keypair (or $KEYPAIR) and sends. You run that; the SDK only signs when you ask.
-  env: RPC_URL, KEYPAIR, MIN_PROFIT_USDC_ATOMS, POLL_MS`);
+  --jup  also hunts the cross-venue surface via Jupiter (Lite/free by default).
+         get a free key at https://dev.jup.ag and pass --jup-key for higher limits.
+  rpc + keypair fall back to your solana config (~/.config/solana/cli/config.yml).
+  env: RPC_URL, KEYPAIR, MIN_PROFIT_USDC_ATOMS, POLL_MS, JUPITER_API_KEY`);
 }
 
-function loadKeeper(): Keypair {
-  const path = arg("keypair") || process.env.KEYPAIR;
-  if (!path) throw new Error("--live needs --keypair <path> or $KEYPAIR");
-  return Keypair.fromSecretKey(new Uint8Array(JSON.parse(readFileSync(path.replace(/^~/, process.env.HOME || "~"), "utf8"))));
+function loadKeeper(cfgKeypair?: string): Keypair {
+  const path = arg("keypair") || process.env.KEYPAIR || cfgKeypair;
+  if (!path) throw new Error("--live needs --keypair <path>, $KEYPAIR, or a keypair_path in your solana config");
+  return Keypair.fromSecretKey(new Uint8Array(JSON.parse(readFileSync(expandTilde(path), "utf8"))));
 }
 
 async function main() {
   const cmd = process.argv[2];
-  const rpc = arg("rpc") || process.env.RPC_URL || "https://api.mainnet-beta.solana.com";
+  const cfg = solanaCliConfig();
+  // rpc: --rpc → $RPC_URL → solana config → mainnet-beta
+  const rpc = arg("rpc") || process.env.RPC_URL || cfg.rpc || "https://api.mainnet-beta.solana.com";
 
   if (cmd === "run") {
     const live = process.argv.includes("--live");
     const connection = new Connection(rpc, "confirmed");
+    const jup = process.argv.includes("--jup");
+    const jupKey = arg("jup-key") || process.env.JUPITER_API_KEY;
+    if (jup) {
+      console.log(
+        jupKey
+          ? "cross-venue: Jupiter Ultra (keyed)"
+          : "cross-venue: Jupiter Lite (free, rate-limited) — grab a free key at https://dev.jup.ag and pass --jup-key for higher limits",
+      );
+    }
     runLoop(connection, {
       live,
-      keeper: live ? loadKeeper() : null,
+      keeper: live ? loadKeeper(cfg.keypair) : null,
       minProfitUsdcAtoms: BigInt(arg("min-profit") || process.env.MIN_PROFIT_USDC_ATOMS || "50000"),
       pollMs: Number(arg("poll") || process.env.POLL_MS || 4000),
       tipLamports: Number(arg("tip") || 10000),
+      jupiter: jup ? { enabled: true, apiKey: jupKey } : undefined,
     });
     return; // runLoop keeps the process alive via setInterval
   }

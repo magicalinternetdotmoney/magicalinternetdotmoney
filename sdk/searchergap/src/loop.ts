@@ -7,8 +7,9 @@
 
 import { Connection, Keypair } from "@solana/web3.js";
 import { discoverMarkets, readTriangle, type Market } from "./markets";
-import { triangleGap } from "./gap";
+import { triangleGap, externalGap } from "./gap";
 import { loadAmmConfigs, buildTriangleArbIxs, jitoTipIx, buildUnsignedTx } from "./executor";
+import { jupiterFairVsUsdc, type JupiterOpts } from "./jupiter";
 
 export interface LoopOpts {
   /** minimum USDC profit (atoms) to act on. default 50_000 ($0.05). */
@@ -23,6 +24,9 @@ export interface LoopOpts {
   pollMs?: number;
   /** log sink. default console.log. */
   log?: (msg: string) => void;
+  /** also hunt the cross-venue surface: price each leg vs Jupiter's best route.
+   *  set `{}` for free Lite, or `{ apiKey }` (dev.jup.ag) for Ultra limits. */
+  jupiter?: JupiterOpts & { enabled?: boolean };
 }
 
 export interface ScanHit {
@@ -51,6 +55,28 @@ export async function scanOnce(connection: Connection, opts: LoopOpts = {}): Pro
   for (const m of await discoverMarkets(connection)) {
     let reserves;
     try { reserves = await readTriangle(connection, m); } catch { continue; }
+
+    // cross-venue surface: each leg's protocol price vs Jupiter's best route.
+    if (opts.jupiter?.enabled) {
+      try {
+        const probe = (r: bigint) => (r > 100n ? r / 100n : r); // ~1% of pool
+        const [fairA, fairB] = await Promise.all([
+          jupiterFairVsUsdc(m.mintA, m.quoteMint, probe(reserves.aqA), opts.jupiter).catch(() => 0),
+          jupiterFairVsUsdc(m.mintB, m.quoteMint, probe(reserves.bqB), opts.jupiter).catch(() => 0),
+        ]);
+        const ext = externalGap(reserves, { fairPriceA: fairA || undefined, fairPriceB: fairB || undefined }, m.tradeFeeBps);
+        for (const leg of [ext.legA, ext.legB]) {
+          if (leg?.action && leg.profitUsdc >= minProfit) {
+            log(`XVENUE ${m.config.toBase58().slice(0, 8)} leg${leg.leg} ${leg.action} ${leg.devBps.toFixed(0)}bps vs Jupiter → est ${usd(leg.profitUsdc)}`);
+            hits.push({
+              market: m.config.toBase58(), direction: `xvenue:${leg.leg}:${leg.action}`,
+              inputUsdc: leg.optimalIn, profitUsdc: leg.profitUsdc, profitBps: Math.round(leg.devBps),
+            });
+          }
+        }
+      } catch { /* jup rate-limit / no route — skip this tick */ }
+    }
+
     const gap = triangleGap(reserves, m.tradeFeeBps);
     if (!gap.direction || gap.profitUsdc < minProfit) continue;
 
